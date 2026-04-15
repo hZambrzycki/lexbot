@@ -1,0 +1,16 @@
+# Binarios
+bin/
+*.exe
+*.out
+
+# Base de datos
+*.db
+
+# Archivos generados
+*.ics
+
+# Carpeta de almacenamiento local (si usas)
+.lexbox/
+
+# OS
+.DS_Store
