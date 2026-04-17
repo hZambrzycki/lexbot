@@ -786,6 +786,18 @@ func (a App) runGetDocument(ctx context.Context, args []string) error {
 			if strings.TrimSpace(e.TriggerText) != "" {
 				fmt.Fprintf(a.Out, "     trigger=%s\n", e.TriggerText)
 			}
+
+			computation := documentapp.BuildUpcomingComputation(
+				e.DateKind,
+				e.AnchorDate,
+				e.RelativeDays,
+				e.IsBusinessDays,
+				e.TriggerText,
+			)
+
+			if strings.TrimSpace(computation) != "" {
+				fmt.Fprintf(a.Out, "     computation=%s\n", computation)
+			}
 		}
 	} else {
 		fmt.Fprintln(a.Out, "Event trace (0):")
@@ -1359,8 +1371,14 @@ func (a App) runListUpcomingEvents(ctx context.Context, args []string) error {
 				if strings.TrimSpace(e.TriggerText) != "" {
 					fmt.Fprintf(a.Out, "     trigger=%s\n", e.TriggerText)
 				}
+				if strings.TrimSpace(e.Computation) != "" {
+					fmt.Fprintf(a.Out, "     computation=%s\n", e.Computation)
+				}
 			} else if e.DateKind == "absolute" {
 				fmt.Fprintln(a.Out, "     derived=absolute")
+				if strings.TrimSpace(e.Computation) != "" {
+					fmt.Fprintf(a.Out, "     computation=%s\n", e.Computation)
+				}
 			}
 		}
 	}

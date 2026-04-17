@@ -60,7 +60,16 @@ func (uc AnalyzeDocumentEvents) Execute(ctx context.Context, input AnalyzeDocume
 			candidate.AnchorSource,
 			candidate.RelativeDays,
 			candidate.IsBusinessDays,
+			candidate.AddExtraDay,
+			currentCalendarScope(),
 			candidate.TriggerText,
+			BuildUpcomingComputation(
+				candidate.DateKind,
+				candidate.AnchorDate,
+				candidate.RelativeDays,
+				candidate.IsBusinessDays,
+				candidate.TriggerText,
+			),
 		)
 		if err != nil {
 			return AnalyzeDocumentEventsResult{}, err

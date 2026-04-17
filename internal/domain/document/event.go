@@ -24,7 +24,10 @@ type Event struct {
 	AnchorSource   string
 	RelativeDays   int
 	IsBusinessDays bool
+	AddExtraDay    bool
+	CalendarScope  string
 	TriggerText    string
+	Computation    string
 }
 
 func NewEvent(
@@ -39,7 +42,10 @@ func NewEvent(
 	anchorSource string,
 	relativeDays int,
 	isBusinessDays bool,
+	addExtraDay bool,
+	calendarScope string,
 	triggerText string,
+	computation string,
 ) (Event, error) {
 	if id == "" || documentID == "" {
 		return Event{}, shared.ErrInvalidID
@@ -65,6 +71,9 @@ func NewEvent(
 		AnchorSource:   anchorSource,
 		RelativeDays:   relativeDays,
 		IsBusinessDays: isBusinessDays,
+		AddExtraDay:    addExtraDay,
+		CalendarScope:  calendarScope,
 		TriggerText:    triggerText,
+		Computation:    computation,
 	}, nil
 }

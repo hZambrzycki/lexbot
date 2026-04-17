@@ -2,7 +2,7 @@ package documentapp
 
 import "testing"
 
-func TestDeduplicateByDateAndType_MergesDuplicateEvents(t *testing.T) {
+func TestDeduplicateUpcomingEvents_MergesDuplicateEvents(t *testing.T) {
 	input := []UpcomingEvent{
 		{
 			EventID:        "1",
@@ -17,6 +17,8 @@ func TestDeduplicateByDateAndType_MergesDuplicateEvents(t *testing.T) {
 			DuplicateCount: 1,
 			DocumentNames:  []string{"eventos.txt"},
 			DocumentIDs:    []string{"doc-1"},
+			DateKind:       "absolute",
+			Computation:    "absolute date",
 		},
 		{
 			EventID:        "2",
@@ -31,10 +33,12 @@ func TestDeduplicateByDateAndType_MergesDuplicateEvents(t *testing.T) {
 			DuplicateCount: 1,
 			DocumentNames:  []string{"eventos_test.txt"},
 			DocumentIDs:    []string{"doc-2"},
+			DateKind:       "absolute",
+			Computation:    "absolute date",
 		},
 	}
 
-	got := deduplicateByDateAndType(input)
+	got := deduplicateUpcomingEvents(input)
 
 	if len(got) != 1 {
 		t.Fatalf("expected 1 deduplicated event, got %d", len(got))
@@ -49,7 +53,7 @@ func TestDeduplicateByDateAndType_MergesDuplicateEvents(t *testing.T) {
 	}
 }
 
-func TestDeduplicateByDateAndType_KeepsDifferentTypesSeparate(t *testing.T) {
+func TestDeduplicateUpcomingEvents_KeepsDifferentTypesSeparate(t *testing.T) {
 	input := []UpcomingEvent{
 		{
 			EventID:        "1",
@@ -64,6 +68,8 @@ func TestDeduplicateByDateAndType_KeepsDifferentTypesSeparate(t *testing.T) {
 			DuplicateCount: 1,
 			DocumentNames:  []string{"a.txt"},
 			DocumentIDs:    []string{"doc-1"},
+			DateKind:       "absolute",
+			Computation:    "absolute date",
 		},
 		{
 			EventID:        "2",
@@ -78,13 +84,68 @@ func TestDeduplicateByDateAndType_KeepsDifferentTypesSeparate(t *testing.T) {
 			DuplicateCount: 1,
 			DocumentNames:  []string{"b.txt"},
 			DocumentIDs:    []string{"doc-2"},
+			DateKind:       "absolute",
+			Computation:    "absolute date",
 		},
 	}
 
-	got := deduplicateByDateAndType(input)
+	got := deduplicateUpcomingEvents(input)
 
 	if len(got) != 2 {
 		t.Fatalf("expected 2 separate events, got %d", len(got))
+	}
+}
+
+func TestDeduplicateUpcomingEvents_KeepsDifferentRelativeSemanticsSeparate(t *testing.T) {
+	input := []UpcomingEvent{
+		{
+			EventID:        "1",
+			DocumentID:     "doc-1",
+			OriginalName:   "a.txt",
+			EventType:      "deadline",
+			EventDate:      "2026-04-16",
+			SourceText:     "En el plazo de cinco días deberá presentar escrito.",
+			DaysRemaining:  0,
+			Status:         "today",
+			Priority:       "critical",
+			DuplicateCount: 1,
+			DocumentNames:  []string{"a.txt"},
+			DocumentIDs:    []string{"doc-1"},
+			AnchorDate:     "2026-04-11",
+			DateKind:       "relative",
+			AnchorSource:   "notification_line",
+			RelativeDays:   5,
+			IsBusinessDays: false,
+			TriggerText:    "en el plazo de cinco dias",
+			Computation:    "anchor + 5 natural days",
+		},
+		{
+			EventID:        "2",
+			DocumentID:     "doc-2",
+			OriginalName:   "b.txt",
+			EventType:      "deadline",
+			EventDate:      "2026-04-16",
+			SourceText:     "Se concede plazo de 3 días hábiles desde el siguiente día hábil para aportar la documentación.",
+			DaysRemaining:  0,
+			Status:         "today",
+			Priority:       "critical",
+			DuplicateCount: 1,
+			DocumentNames:  []string{"b.txt"},
+			DocumentIDs:    []string{"doc-2"},
+			AnchorDate:     "2026-04-11",
+			DateKind:       "relative",
+			AnchorSource:   "notification_line",
+			RelativeDays:   3,
+			IsBusinessDays: true,
+			TriggerText:    "plazo de 3 dias habiles desde el siguiente dia habil",
+			Computation:    "anchor + next_day + 3 business days",
+		},
+	}
+
+	got := deduplicateUpcomingEvents(input)
+
+	if len(got) != 2 {
+		t.Fatalf("expected 2 separate relative events, got %d", len(got))
 	}
 }
 
@@ -131,6 +192,117 @@ func TestClassifyUpcomingPriority(t *testing.T) {
 		got := classifyUpcomingPriority(tt.eventType, tt.daysRemaining)
 		if got != tt.want {
 			t.Fatalf("%s: expected %q, got %q", tt.name, tt.want, got)
+		}
+	}
+}
+
+func TestBuildUpcomingComputation_IncludesNextDayForRelativeChain(t *testing.T) {
+	got := BuildUpcomingComputation(
+		"relative",
+		"2026-04-11",
+		5,
+		false,
+		"plazo de 5 dias a contar desde el dia siguiente",
+	)
+
+	want := "anchor + next_day + 5 natural days"
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestBuildUpcomingComputation_UsesBusinessDays(t *testing.T) {
+	got := BuildUpcomingComputation(
+		"relative",
+		"2026-04-11",
+		3,
+		true,
+		"dentro de 3 dias habiles",
+	)
+
+	want := "anchor + 3 business days"
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestBuildUpcomingComputation_UsesBusinessDaysWithNextBusinessDayTrigger(t *testing.T) {
+	got := BuildUpcomingComputation(
+		"relative",
+		"2026-04-11",
+		3,
+		true,
+		"plazo de 3 dias habiles desde el siguiente dia habil",
+	)
+
+	want := "anchor + next_day + 3 business days"
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestBuildUpcomingComputation_ForAbsoluteDate(t *testing.T) {
+	got := BuildUpcomingComputation(
+		"absolute",
+		"2026-04-11",
+		0,
+		false,
+		"",
+	)
+
+	want := "absolute date"
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestBuildUpcomingComputation_ForRelativeWithoutAnchorOrDays(t *testing.T) {
+	got := BuildUpcomingComputation(
+		"relative",
+		"",
+		0,
+		false,
+		"",
+	)
+
+	want := "relative date"
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestTriggerAddsExtraDay(t *testing.T) {
+	tests := []struct {
+		name    string
+		trigger string
+		want    bool
+	}{
+		{
+			name:    "a contar desde el dia siguiente",
+			trigger: "plazo de 5 dias a contar desde el dia siguiente",
+			want:    true,
+		},
+		{
+			name:    "desde el siguiente",
+			trigger: "plazo de 5 dias desde el siguiente",
+			want:    true,
+		},
+		{
+			name:    "desde el siguiente dia habil",
+			trigger: "plazo de 3 dias habiles desde el siguiente dia habil",
+			want:    true,
+		},
+		{
+			name:    "plain relative deadline",
+			trigger: "dentro de 3 dias habiles",
+			want:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		got := triggerAddsExtraDay(tt.trigger)
+		if got != tt.want {
+			t.Fatalf("%s: expected %v, got %v", tt.name, tt.want, got)
 		}
 	}
 }

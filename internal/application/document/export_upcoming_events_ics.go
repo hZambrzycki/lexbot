@@ -70,6 +70,14 @@ func buildICSCalendar(events []UpcomingEvent) string {
 			fmt.Sprintf("Event date: %s", e.EventDate),
 		}
 
+		if strings.TrimSpace(e.DateKind) != "" {
+			descriptionParts = append(descriptionParts, fmt.Sprintf("Date kind: %s", e.DateKind))
+		}
+
+		if strings.TrimSpace(e.Computation) != "" {
+			descriptionParts = append(descriptionParts, fmt.Sprintf("Computation: %s", e.Computation))
+		}
+
 		if len(e.DocumentNames) > 0 {
 			descriptionParts = append(descriptionParts, fmt.Sprintf("Documents: %s", strings.Join(e.DocumentNames, ", ")))
 		}
@@ -83,8 +91,6 @@ func buildICSCalendar(events []UpcomingEvent) string {
 		}
 
 		if e.DateKind == "relative" {
-			descriptionParts = append(descriptionParts, "Date kind: relative")
-
 			if strings.TrimSpace(e.AnchorDate) != "" {
 				descriptionParts = append(descriptionParts, fmt.Sprintf("Anchor date: %s", e.AnchorDate))
 			}

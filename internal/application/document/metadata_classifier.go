@@ -24,38 +24,49 @@ func classifyDocumentMetadata(content string) metadataClassification {
 }
 
 func normalizeMetadataText(content string) string {
-	return strings.ToLower(strings.Join(strings.Fields(content), " "))
+	return normalizeASCIIText(content)
 }
 
 func hasEnoughLegalSignal(text string) bool {
+	if containsAny(text,
+		"diligencia de ordenacion",
+		"providencia",
+		"decreto",
+		"auto",
+		"sentencia",
+		"nomina",
+		"carta de despido",
+		"saldo y finiquito",
+		"demanda de divorcio",
+		"medidas paternofiliales",
+		"autorizacion de residencia",
+		"tarjeta de residencia",
+		"recurso de reposicion",
+		"recurso de apelacion",
+	) {
+		return true
+	}
+
 	strongSignals := []string{
 		"demanda",
-		"sentencia",
-		"auto",
-		"decreto",
-		"providencia",
-		"diligencia de ordenación",
-		"diligencia de ordenacion",
+		"contestacion a la demanda",
 		"juzgado",
 		"tribunal",
 		"fundamentos de derecho",
 		"suplico al juzgado",
+		"hechos",
+		"fallo",
 		"despido",
 		"finiquito",
-		"nómina",
 		"nomina",
-		"relación laboral",
 		"relacion laboral",
 		"custodia",
 		"divorcio",
-		"pensión alimenticia",
 		"pension alimenticia",
 		"tarjeta de residencia",
-		"autorización de residencia",
 		"autorizacion de residencia",
 		"nie",
 		"arraigo",
-		"reagrupación familiar",
 		"reagrupacion familiar",
 		"sociedad",
 		"administrador",
@@ -63,6 +74,16 @@ func hasEnoughLegalSignal(text string) bool {
 		"arrendamiento",
 		"compraventa",
 		"incumplimiento",
+		"recurso de reposicion",
+		"recurso de apelacion",
+		"demanda ejecutiva",
+		"ejecucion",
+		"monitorio",
+		"smac",
+		"devengos",
+		"liquido a percibir",
+		"base de cotizacion",
+		"irpf",
 	}
 
 	score := countKeywordMatches(text, strongSignals)
@@ -82,12 +103,12 @@ func classifyDocumentType(text string) string {
 		"demanda de divorcio",
 		"divorcio contencioso",
 		"medidas paternofiliales",
+		"medidas paterno filiales",
 		"guarda y custodia",
 	):
 		return "divorce_petition"
 
 	case containsAny(text,
-		"diligencia de ordenación",
 		"diligencia de ordenacion",
 		"providencia",
 		"decreto",
@@ -95,23 +116,42 @@ func classifyDocumentType(text string) string {
 		return "order"
 
 	case containsAny(text,
-		"debo condenar y condeno",
-		"fallo",
-		"sentencia",
+		"recurso de reposicion",
 	):
-		return "judgment"
+		return "appeal_motion"
 
 	case containsAny(text,
-		"autorización de residencia",
+		"recurso de apelacion",
+	):
+		return "appeal_brief"
+
+	case containsAny(text,
+		"papeleta de conciliacion",
+		"smac",
+		"acto de conciliacion",
+	):
+		return "conciliation_filing"
+
+	case containsAny(text,
 		"autorizacion de residencia",
 		"tarjeta de residencia",
+		"nie",
 	) && containsAny(text,
-		"resolución",
 		"resolucion",
-		"denegación",
 		"denegacion",
+		"concede",
+		"se deniega",
 	):
 		return "residence_decision"
+
+	case containsAny(text,
+		"auto",
+	) && containsAny(text,
+		"parte dispositiva",
+		"fundamentos de derecho",
+		"razonamientos juridicos",
+	):
+		return "order_decision"
 	}
 
 	type docRule struct {
@@ -122,31 +162,95 @@ func classifyDocumentType(text string) string {
 
 	rules := []docRule{
 		{
+			documentType: "claim",
+			keywords: []string{
+				"demanda",
+				"hechos",
+				"fundamentos de derecho",
+				"suplico al juzgado",
+			},
+			minScore: 3,
+		},
+		{
+			documentType: "judgment",
+			keywords: []string{
+				"debo condenar y condeno",
+				"fallo",
+				"parte dispositiva",
+				"sentencia firme",
+			},
+			minScore: 1,
+		},
+		{
 			documentType: "payroll",
 			keywords: []string{
-				"nómina", "nomina", "devengos", "líquido a percibir", "liquido a percibir",
-				"base de cotización", "base de cotizacion",
+				"nomina",
+				"devengos",
+				"liquido a percibir",
+				"base de cotizacion",
+				"contingencias comunes",
+				"irpf",
 			},
 			minScore: 2,
 		},
 		{
 			documentType: "settlement",
 			keywords: []string{
-				"finiquito", "saldo y finiquito", "liquidación", "liquidacion",
+				"finiquito",
+				"saldo y finiquito",
+				"liquidacion final",
+				"indemnizacion",
 			},
 			minScore: 2,
 		},
 		{
-			documentType: "claim",
+			documentType: "answer",
 			keywords: []string{
-				"demanda", "hechos", "fundamentos de derecho", "suplico al juzgado",
+				"contestacion a la demanda",
+				"esta parte se opone",
+				"se impugna",
+				"hechos",
+				"fundamentos de derecho",
 			},
 			minScore: 2,
 		},
 		{
 			documentType: "contract",
 			keywords: []string{
-				"contrato", "cláusula", "clausula", "las partes acuerdan",
+				"contrato",
+				"clausula",
+				"las partes acuerdan",
+				"objeto del contrato",
+				"duracion",
+			},
+			minScore: 2,
+		},
+		{
+			documentType: "administrative_resolution",
+			keywords: []string{
+				"resolucion",
+				"antecedentes de hecho",
+				"fundamentos de derecho",
+				"parte dispositiva",
+			},
+			minScore: 3,
+		},
+		{
+			documentType: "enforcement_filing",
+			keywords: []string{
+				"demanda ejecutiva",
+				"ejecucion",
+				"despachar ejecucion",
+				"titulo ejecutivo",
+			},
+			minScore: 2,
+		},
+		{
+			documentType: "monitorio_filing",
+			keywords: []string{
+				"procedimiento monitorio",
+				"peticion inicial de procedimiento monitorio",
+				"reclamacion de cantidad",
 			},
 			minScore: 2,
 		},
@@ -178,16 +282,22 @@ func classifyLegalArea(text string) string {
 			area: "labor",
 			keywords: []string{
 				"despido",
-				"nómina", "nomina",
+				"nomina",
 				"finiquito",
 				"salario",
 				"trabajador",
 				"empresa",
-				"relación laboral", "relacion laboral",
+				"relacion laboral",
 				"horas extraordinarias",
 				"contrato de trabajo",
-				"extinción de la relación laboral",
 				"extincion de la relacion laboral",
+				"smac",
+				"conciliacion laboral",
+				"devengos",
+				"liquido a percibir",
+				"base de cotizacion",
+				"irpf",
+				"contingencias comunes",
 			},
 			minScore: 2,
 		},
@@ -196,12 +306,13 @@ func classifyLegalArea(text string) string {
 			keywords: []string{
 				"nie",
 				"residencia",
-				"autorización de residencia", "autorizacion de residencia",
+				"autorizacion de residencia",
 				"tarjeta de residencia",
-				"reagrupación familiar", "reagrupacion familiar",
+				"reagrupacion familiar",
 				"extranjero",
-				"ciudadano de la unión", "ciudadano de la union",
+				"ciudadano de la union",
 				"arraigo",
+				"oficina de extranjeria",
 			},
 			minScore: 2,
 		},
@@ -210,12 +321,13 @@ func classifyLegalArea(text string) string {
 			keywords: []string{
 				"divorcio",
 				"custodia",
-				"pensión alimenticia", "pension alimenticia",
+				"pension alimenticia",
 				"medidas paterno filiales",
 				"medidas paternofiliales",
 				"guarda y custodia",
 				"hijo menor",
-				"régimen de visitas", "regimen de visitas",
+				"regimen de visitas",
+				"patria potestad",
 			},
 			minScore: 2,
 		},
@@ -231,6 +343,7 @@ func classifyLegalArea(text string) string {
 				"responsabilidad limitada",
 				"s.l.",
 				"sl",
+				"sociedad limitada",
 			},
 			minScore: 2,
 		},
@@ -238,11 +351,31 @@ func classifyLegalArea(text string) string {
 			area: "civil",
 			keywords: []string{
 				"contrato",
-				"reclamación de cantidad", "reclamacion de cantidad",
+				"reclamacion de cantidad",
 				"incumplimiento",
 				"arrendamiento",
 				"alquiler",
 				"compraventa",
+				"resolucion contractual",
+			},
+			minScore: 2,
+		},
+		{
+			area: "procedural",
+			keywords: []string{
+				"juzgado",
+				"tribunal",
+				"providencia",
+				"diligencia de ordenacion",
+				"decreto",
+				"auto",
+				"sentencia",
+				"recurso de reposicion",
+				"recurso de apelacion",
+				"ejecucion",
+				"notifiquese",
+				"plazo",
+				"alegaciones",
 			},
 			minScore: 2,
 		},

@@ -169,8 +169,8 @@ La comparecencia tendrá lugar el 15/05/2026.
 	if metadata.DocumentType != "order" {
 		t.Fatalf("expected document type %q, got %q", "order", metadata.DocumentType)
 	}
-	if metadata.LegalArea != "unknown" {
-		t.Fatalf("expected legal area %q, got %q", "unknown", metadata.LegalArea)
+	if metadata.LegalArea != "procedural" {
+		t.Fatalf("expected legal area %q, got %q", "procedural", metadata.LegalArea)
 	}
 
 	events, err := documentEventRepo.ListByDocumentID(ctx, result.Document.ID)
@@ -197,8 +197,8 @@ func runTestMigrations(t *testing.T, db *sql.DB) {
 		filepath.Join("..", "..", "..", "migrations", "003_document_metadata.sql"),
 		filepath.Join("..", "..", "..", "migrations", "004_document_events.sql"),
 		filepath.Join("..", "..", "..", "migrations", "005_document_event_context.sql"),
+		filepath.Join("..", "..", "..", "migrations", "006_document_event_semantics.sql"),
 	}
-
 	for _, path := range paths {
 		if err := reposqlite.RunMigrations(db, path); err != nil {
 			t.Fatalf("RunMigrations(%s): %v", path, err)

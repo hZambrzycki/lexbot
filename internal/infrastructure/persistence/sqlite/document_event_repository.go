@@ -41,15 +41,23 @@ func (r *DocumentEventRepository) ReplaceByDocumentID(ctx context.Context, docum
 			anchor_source,
 			relative_days,
 			is_business_days,
-			trigger_text
+			add_extra_day,
+			calendar_scope,
+			trigger_text,
+			computation
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	for _, event := range events {
 		isBusinessDays := 0
 		if event.IsBusinessDays {
 			isBusinessDays = 1
+		}
+
+		addExtraDay := 0
+		if event.AddExtraDay {
+			addExtraDay = 1
 		}
 
 		_, err := tx.ExecContext(
@@ -66,7 +74,10 @@ func (r *DocumentEventRepository) ReplaceByDocumentID(ctx context.Context, docum
 			nullIfBlank(event.AnchorSource),
 			event.RelativeDays,
 			isBusinessDays,
+			addExtraDay,
+			emptyDefault(event.CalendarScope, "madrid"),
 			nullIfBlank(event.TriggerText),
+			emptyDefault(event.Computation, ""),
 		)
 		if err != nil {
 			return err
@@ -90,7 +101,10 @@ func (r *DocumentEventRepository) ListByDocumentID(ctx context.Context, document
 			anchor_source,
 			relative_days,
 			is_business_days,
-			trigger_text
+			add_extra_day,
+			calendar_scope,
+			trigger_text,
+			computation
 		FROM document_events
 		WHERE document_id = ?
 		ORDER BY event_date ASC, id ASC
@@ -116,7 +130,10 @@ func (r *DocumentEventRepository) ListByDocumentID(ctx context.Context, document
 			anchorSource   sql.NullString
 			relativeDays   int
 			isBusinessDays int
+			addExtraDay    int
+			calendarScope  string
 			triggerText    sql.NullString
+			computation    string
 		)
 
 		if err := rows.Scan(
@@ -131,7 +148,10 @@ func (r *DocumentEventRepository) ListByDocumentID(ctx context.Context, document
 			&anchorSource,
 			&relativeDays,
 			&isBusinessDays,
+			&addExtraDay,
+			&calendarScope,
 			&triggerText,
+			&computation,
 		); err != nil {
 			return nil, err
 		}
@@ -148,7 +168,10 @@ func (r *DocumentEventRepository) ListByDocumentID(ctx context.Context, document
 			AnchorSource:   anchorSource.String,
 			RelativeDays:   relativeDays,
 			IsBusinessDays: isBusinessDays == 1,
+			AddExtraDay:    addExtraDay == 1,
+			CalendarScope:  calendarScope,
 			TriggerText:    triggerText.String,
+			Computation:    computation,
 		})
 	}
 
@@ -173,7 +196,10 @@ func (r *DocumentEventRepository) ListByCaseFileID(ctx context.Context, caseFile
 			COALESCE(de.anchor_source, ''),
 			COALESCE(de.relative_days, 0),
 			COALESCE(de.is_business_days, 0),
-			COALESCE(de.trigger_text, '')
+			COALESCE(de.add_extra_day, 0),
+			COALESCE(de.calendar_scope, 'madrid'),
+			COALESCE(de.trigger_text, ''),
+			COALESCE(de.computation, '')
 		FROM document_events de
 		INNER JOIN documents d ON d.id = de.document_id
 		WHERE d.case_file_id = ?
@@ -191,6 +217,7 @@ func (r *DocumentEventRepository) ListByCaseFileID(ctx context.Context, caseFile
 		var (
 			item           querymodels.CaseFileEventResult
 			isBusinessDays int
+			addExtraDay    int
 		)
 
 		if err := rows.Scan(
@@ -205,12 +232,16 @@ func (r *DocumentEventRepository) ListByCaseFileID(ctx context.Context, caseFile
 			&item.AnchorSource,
 			&item.RelativeDays,
 			&isBusinessDays,
+			&addExtraDay,
+			&item.CalendarScope,
 			&item.TriggerText,
+			&item.Computation,
 		); err != nil {
 			return nil, err
 		}
 
 		item.IsBusinessDays = isBusinessDays == 1
+		item.AddExtraDay = addExtraDay == 1
 		results = append(results, item)
 	}
 
@@ -235,7 +266,10 @@ func (r *DocumentEventRepository) ListUpcoming(ctx context.Context, fromDate str
 			COALESCE(de.anchor_source, ''),
 			COALESCE(de.relative_days, 0),
 			COALESCE(de.is_business_days, 0),
-			COALESCE(de.trigger_text, '')
+			COALESCE(de.add_extra_day, 0),
+			COALESCE(de.calendar_scope, 'madrid'),
+			COALESCE(de.trigger_text, ''),
+			COALESCE(de.computation, '')
 		FROM document_events de
 		INNER JOIN documents d ON d.id = de.document_id
 		WHERE 1=1
@@ -271,6 +305,7 @@ func (r *DocumentEventRepository) ListUpcoming(ctx context.Context, fromDate str
 		var (
 			item           querymodels.CaseFileEventResult
 			isBusinessDays int
+			addExtraDay    int
 		)
 
 		if err := rows.Scan(
@@ -285,12 +320,16 @@ func (r *DocumentEventRepository) ListUpcoming(ctx context.Context, fromDate str
 			&item.AnchorSource,
 			&item.RelativeDays,
 			&isBusinessDays,
+			&addExtraDay,
+			&item.CalendarScope,
 			&item.TriggerText,
+			&item.Computation,
 		); err != nil {
 			return nil, err
 		}
 
 		item.IsBusinessDays = isBusinessDays == 1
+		item.AddExtraDay = addExtraDay == 1
 		results = append(results, item)
 	}
 
@@ -304,6 +343,13 @@ func (r *DocumentEventRepository) ListUpcoming(ctx context.Context, fromDate str
 func nullIfBlank(value string) any {
 	if value == "" {
 		return nil
+	}
+	return value
+}
+
+func emptyDefault(value, fallback string) string {
+	if value == "" {
+		return fallback
 	}
 	return value
 }

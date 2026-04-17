@@ -3,6 +3,7 @@ package documentapp
 import (
 	"context"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,17 +18,15 @@ type ListUpcomingEventsInput struct {
 }
 
 type UpcomingEvent struct {
-	EventID      string
-	DocumentID   string
-	OriginalName string
-	EventType    string
-	EventDate    string
-	SourceText   string
-
-	DaysRemaining int
-	Status        string
-	Priority      string
-
+	EventID        string
+	DocumentID     string
+	OriginalName   string
+	EventType      string
+	EventDate      string
+	SourceText     string
+	DaysRemaining  int
+	Status         string
+	Priority       string
 	DuplicateCount int
 	DocumentNames  []string
 	DocumentIDs    []string
@@ -38,6 +37,7 @@ type UpcomingEvent struct {
 	RelativeDays   int
 	IsBusinessDays bool
 	TriggerText    string
+	Computation    string
 }
 
 type ListUpcomingEvents struct {
@@ -103,16 +103,18 @@ func (uc ListUpcomingEvents) Execute(ctx context.Context, in ListUpcomingEventsI
 			DuplicateCount: 1,
 			DocumentNames:  []string{e.OriginalName},
 			DocumentIDs:    []string{e.DocumentID},
+
 			AnchorDate:     e.AnchorDate,
 			DateKind:       e.DateKind,
 			AnchorSource:   e.AnchorSource,
 			RelativeDays:   e.RelativeDays,
 			IsBusinessDays: e.IsBusinessDays,
 			TriggerText:    e.TriggerText,
+			Computation:    BuildUpcomingComputation(e.DateKind, e.AnchorDate, e.RelativeDays, e.IsBusinessDays, e.TriggerText),
 		})
 	}
 
-	return deduplicateByDateAndType(enriched), nil
+	return deduplicateUpcomingEvents(enriched), nil
 }
 
 func classifyUpcomingPriority(eventType string, daysRemaining int) string {
@@ -155,10 +157,16 @@ func classifyUpcomingPriority(eventType string, daysRemaining int) string {
 	}
 }
 
-func deduplicateByDateAndType(items []UpcomingEvent) []UpcomingEvent {
+func deduplicateUpcomingEvents(items []UpcomingEvent) []UpcomingEvent {
 	type key struct {
-		EventDate string
-		EventType string
+		EventDate      string
+		EventType      string
+		DateKind       string
+		AnchorDate     string
+		AnchorSource   string
+		RelativeDays   int
+		IsBusinessDays bool
+		TriggerText    string
 	}
 
 	seen := make(map[key]int, len(items))
@@ -166,8 +174,14 @@ func deduplicateByDateAndType(items []UpcomingEvent) []UpcomingEvent {
 
 	for _, item := range items {
 		k := key{
-			EventDate: item.EventDate,
-			EventType: item.EventType,
+			EventDate:      item.EventDate,
+			EventType:      item.EventType,
+			DateKind:       strings.TrimSpace(item.DateKind),
+			AnchorDate:     strings.TrimSpace(item.AnchorDate),
+			AnchorSource:   strings.TrimSpace(item.AnchorSource),
+			RelativeDays:   item.RelativeDays,
+			IsBusinessDays: item.IsBusinessDays,
+			TriggerText:    strings.TrimSpace(item.TriggerText),
 		}
 
 		if idx, exists := seen[k]; exists {
@@ -179,15 +193,6 @@ func deduplicateByDateAndType(items []UpcomingEvent) []UpcomingEvent {
 
 			result[idx].DocumentNames = appendUniqueString(result[idx].DocumentNames, item.OriginalName)
 			result[idx].DocumentIDs = appendUniqueString(result[idx].DocumentIDs, item.DocumentID)
-
-			if result[idx].DateKind == "" && item.DateKind != "" {
-				result[idx].DateKind = item.DateKind
-				result[idx].AnchorDate = item.AnchorDate
-				result[idx].AnchorSource = item.AnchorSource
-				result[idx].RelativeDays = item.RelativeDays
-				result[idx].IsBusinessDays = item.IsBusinessDays
-				result[idx].TriggerText = item.TriggerText
-			}
 
 			if priorityRank(item.Priority) < priorityRank(result[idx].Priority) {
 				result[idx].Priority = item.Priority
@@ -222,10 +227,78 @@ func deduplicateByDateAndType(items []UpcomingEvent) []UpcomingEvent {
 			return pi < pj
 		}
 
-		return result[i].EventType < result[j].EventType
+		if result[i].EventType != result[j].EventType {
+			return result[i].EventType < result[j].EventType
+		}
+
+		if result[i].DateKind != result[j].DateKind {
+			return result[i].DateKind < result[j].DateKind
+		}
+
+		if result[i].AnchorDate != result[j].AnchorDate {
+			return result[i].AnchorDate < result[j].AnchorDate
+		}
+
+		if result[i].RelativeDays != result[j].RelativeDays {
+			return result[i].RelativeDays < result[j].RelativeDays
+		}
+
+		if result[i].IsBusinessDays != result[j].IsBusinessDays {
+			return !result[i].IsBusinessDays && result[j].IsBusinessDays
+		}
+
+		return result[i].TriggerText < result[j].TriggerText
 	})
 
 	return result
+}
+
+func BuildUpcomingComputation(dateKind, anchorDate string, relativeDays int, isBusinessDays bool, triggerText string) string {
+	if strings.TrimSpace(dateKind) == "" {
+		return ""
+	}
+
+	if dateKind != "relative" {
+		return "absolute date"
+	}
+
+	if strings.TrimSpace(anchorDate) == "" || relativeDays <= 0 {
+		return "relative date"
+	}
+
+	parts := []string{"anchor"}
+
+	if triggerAddsExtraDay(triggerText) {
+		parts = append(parts, "next_day")
+	}
+
+	dayLabel := "natural days"
+	if isBusinessDays {
+		dayLabel = "business days"
+	}
+
+	parts = append(parts, strconv.Itoa(relativeDays)+" "+dayLabel)
+
+	return strings.Join(parts, " + ")
+}
+
+func triggerAddsExtraDay(triggerText string) bool {
+	normalized := normalizeASCIIText(triggerText)
+
+	return containsAny(normalized,
+		"a contar desde el dia siguiente",
+		"desde el dia siguiente",
+		"a contar desde el siguiente",
+		"desde el siguiente",
+		"a partir del dia siguiente",
+		"a partir del siguiente",
+		"a contar desde el siguiente dia habil",
+		"desde el siguiente dia habil",
+		"a partir del siguiente dia habil",
+		"a contar desde el dia habil siguiente",
+		"desde el dia habil siguiente",
+		"a partir del dia habil siguiente",
+	)
 }
 
 func statusRank(status string) int {

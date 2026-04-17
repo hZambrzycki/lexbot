@@ -12,5 +12,8 @@ type CaseFileEventResult struct {
 	AnchorSource   string
 	RelativeDays   int
 	IsBusinessDays bool
+	AddExtraDay    bool
+	CalendarScope  string
 	TriggerText    string
+	Computation    string
 }

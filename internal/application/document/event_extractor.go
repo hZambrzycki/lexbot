@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	domaincalendar "lexbox/internal/domain/calendar"
 )
 
 const (
@@ -16,6 +18,8 @@ const (
 	anchorSourcePreviousLine         = "previous_line"
 	anchorSourceNotificationLine     = "notification_line"
 	anchorSourceProceduralAnchorLine = "procedural_anchor_line"
+
+	defaultCalendarScope = domaincalendar.ScopeMadrid
 )
 
 type extractedEventCandidate struct {
@@ -27,6 +31,7 @@ type extractedEventCandidate struct {
 	AnchorSource   string
 	RelativeDays   int
 	IsBusinessDays bool
+	AddExtraDay    bool
 	TriggerText    string
 }
 
@@ -45,7 +50,7 @@ var (
 		`((?:en\s+el\s+plazo\s+de|en\s+plazo\s+de|plazo\s+de|dentro\s+de|en)\s+` +
 			`(\d{1,2}|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|dieciseis|dieciséis|diecisiete|dieciocho|diecinueve|veinte)` +
 			`\s+dias?` +
-			`(?:\s+(habiles|naturales))?)`,
+			`(?:\s+(habil(?:es)?|natural(?:es)?))?)`,
 	)
 
 	nextDayNotificationRegex = regexp.MustCompile(
@@ -53,7 +58,18 @@ var (
 	)
 
 	nextDayChainRegex = regexp.MustCompile(
-		`(a\s+contar\s+desde\s+el\s+dia\s+siguiente|desde\s+el\s+dia\s+siguiente|a\s+contar\s+desde\s+el\s+siguiente|desde\s+el\s+siguiente)`,
+		`(a\s+contar\s+desde\s+el\s+siguiente\s+dia\s+habil|` +
+			`desde\s+el\s+siguiente\s+dia\s+habil|` +
+			`a\s+partir\s+del\s+siguiente\s+dia\s+habil|` +
+			`a\s+contar\s+desde\s+el\s+dia\s+habil\s+siguiente|` +
+			`desde\s+el\s+dia\s+habil\s+siguiente|` +
+			`a\s+partir\s+del\s+dia\s+habil\s+siguiente|` +
+			`a\s+contar\s+desde\s+el\s+dia\s+siguiente|` +
+			`desde\s+el\s+dia\s+siguiente|` +
+			`a\s+partir\s+del\s+dia\s+siguiente|` +
+			`a\s+contar\s+desde\s+el\s+siguiente|` +
+			`desde\s+el\s+siguiente|` +
+			`a\s+partir\s+del\s+siguiente)`,
 	)
 )
 
@@ -99,6 +115,7 @@ func extractDocumentEvents(content string) []extractedEventCandidate {
 				AnchorSource:   anchorSourceInline,
 				RelativeDays:   0,
 				IsBusinessDays: false,
+				AddExtraDay:    false,
 				TriggerText:    "",
 			})
 		}
@@ -131,6 +148,7 @@ func extractDocumentEvents(content string) []extractedEventCandidate {
 				AnchorSource:   anchorSource,
 				RelativeDays:   match.Days,
 				IsBusinessDays: match.IsBusinessDays,
+				AddExtraDay:    match.AddExtraDay,
 				TriggerText:    match.RawText,
 			})
 		}
@@ -298,10 +316,21 @@ func looksLikeRelativeDeadline(line string) bool {
 		"formular alegaciones",
 		"a contar desde la notificacion",
 		"desde la notificacion",
+		"a contar desde su notificacion",
+		"desde su notificacion",
+		"desde la notificacion de la presente resolucion",
 		"a contar desde el dia siguiente",
 		"desde el dia siguiente",
 		"a contar desde el siguiente",
 		"desde el siguiente",
+		"a partir del dia siguiente",
+		"a partir del siguiente",
+		"a contar desde el siguiente dia habil",
+		"desde el siguiente dia habil",
+		"a partir del siguiente dia habil",
+		"a contar desde el dia habil siguiente",
+		"desde el dia habil siguiente",
+		"a partir del dia habil siguiente",
 	)
 }
 
@@ -370,12 +399,9 @@ func extractRelativeDateMatchesFromLine(line string) []relativeDateMatch {
 			modifier = strings.TrimSpace(normalizeASCIIText(match[3]))
 		}
 
-		isBusinessDays := modifier == "habiles"
+		isBusinessDays := modifier == "habil" || modifier == "habiles"
 
-		rawText := strings.TrimSpace(match[1])
-		if addExtraDay {
-			rawText = strings.TrimSpace(rawText + " " + firstMatchText(nextDayChainRegex, normalized))
-		}
+		rawText := buildRelativeTriggerText(normalized, strings.TrimSpace(match[1]), addExtraDay)
 
 		result = append(result, relativeDateMatch{
 			RawText:        rawText,
@@ -394,6 +420,54 @@ func firstMatchText(re *regexp.Regexp, value string) string {
 		return ""
 	}
 	return strings.TrimSpace(match[1])
+}
+
+func buildRelativeTriggerText(normalizedLine, baseTrigger string, addExtraDay bool) string {
+	baseTrigger = strings.TrimSpace(baseTrigger)
+	if baseTrigger == "" {
+		return ""
+	}
+
+	if !addExtraDay {
+		return baseTrigger
+	}
+
+	nextDayText := detectNextDayTriggerText(normalizedLine)
+	if nextDayText == "" {
+		return baseTrigger
+	}
+
+	return strings.TrimSpace(baseTrigger + " " + nextDayText)
+}
+
+func detectNextDayTriggerText(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+
+	phrases := []string{
+		"a contar desde el siguiente dia habil",
+		"desde el siguiente dia habil",
+		"a partir del siguiente dia habil",
+		"a contar desde el dia habil siguiente",
+		"desde el dia habil siguiente",
+		"a partir del dia habil siguiente",
+		"a contar desde el dia siguiente",
+		"desde el dia siguiente",
+		"a partir del dia siguiente",
+		"a contar desde el siguiente",
+		"desde el siguiente",
+		"a partir del siguiente",
+	}
+
+	for _, phrase := range phrases {
+		if strings.Contains(value, phrase) {
+			return phrase
+		}
+	}
+
+	return ""
 }
 
 func deduplicateRelativeMatches(items []relativeDateMatch) []relativeDateMatch {
@@ -424,6 +498,20 @@ func deduplicateRelativeMatches(items []relativeDateMatch) []relativeDateMatch {
 	return result
 }
 
+func currentCalendarScope() string {
+	return defaultCalendarScope
+}
+
+func currentProceduralRules() domaincalendar.ProceduralRules {
+	return domaincalendar.ProceduralRules{
+		AugustNonBusiness: true,
+	}
+}
+
+func calendarForYear(year int) domaincalendar.Calendar {
+	return domaincalendar.NewCalendar(domaincalendar.Holidays(currentCalendarScope(), year))
+}
+
 func computeRelativeTargetDate(anchorDate string, days int, isBusinessDays bool, addExtraDay bool) (string, bool) {
 	if strings.TrimSpace(anchorDate) == "" || days <= 0 {
 		return "", false
@@ -441,7 +529,8 @@ func computeRelativeTargetDate(anchorDate string, days int, isBusinessDays bool,
 
 	var target time.Time
 	if isBusinessDays {
-		target = addBusinessDays(baseDate, totalDays)
+		cal := calendarForYear(baseDate.Year())
+		target = cal.AddBusinessDaysWithRules(baseDate, totalDays, currentProceduralRules())
 	} else {
 		target = baseDate.AddDate(0, 0, totalDays)
 	}

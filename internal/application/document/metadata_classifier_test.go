@@ -59,6 +59,90 @@ func TestClassifyDocumentMetadata_ResidenceDecision(t *testing.T) {
 	}
 }
 
+func TestClassifyDocumentMetadata_ProceduralOrder_BriefOrder(t *testing.T) {
+	content := `
+	DILIGENCIA DE ORDENACIÓN
+
+	Notifíquese la resolución. Se concede plazo de cinco días
+	para formular alegaciones.
+	`
+
+	got := classifyDocumentMetadata(content)
+
+	if got.DocumentType != "order" {
+		t.Fatalf("expected document type %q, got %q", "order", got.DocumentType)
+	}
+
+	if got.LegalArea != "procedural" {
+		t.Fatalf("expected legal area %q, got %q", "procedural", got.LegalArea)
+	}
+}
+
+func TestClassifyDocumentMetadata_LaborClaim(t *testing.T) {
+	content := `
+	DEMANDA
+
+	HECHOS
+
+	El trabajador fue despedido por la empresa y reclama salario,
+	finiquito y horas extraordinarias.
+
+	FUNDAMENTOS DE DERECHO
+
+	SUPLICO AL JUZGADO que dicte sentencia estimatoria.
+	`
+
+	got := classifyDocumentMetadata(content)
+
+	if got.DocumentType != "claim" {
+		t.Fatalf("expected document type %q, got %q", "claim", got.DocumentType)
+	}
+
+	if got.LegalArea != "labor" {
+		t.Fatalf("expected legal area %q, got %q", "labor", got.LegalArea)
+	}
+}
+
+func TestClassifyDocumentMetadata_Payroll(t *testing.T) {
+	content := `
+	NÓMINA
+
+	Devengos
+	Base de cotización
+	Líquido a percibir
+	IRPF
+	`
+
+	got := classifyDocumentMetadata(content)
+
+	if got.DocumentType != "payroll" {
+		t.Fatalf("expected document type %q, got %q", "payroll", got.DocumentType)
+	}
+
+	if got.LegalArea != "labor" {
+		t.Fatalf("expected legal area %q, got %q", "labor", got.LegalArea)
+	}
+}
+
+func TestClassifyDocumentMetadata_Settlement(t *testing.T) {
+	content := `
+	SALDO Y FINIQUITO
+
+	Liquidación final e indemnización derivadas de la extinción
+	de la relación laboral.
+	`
+
+	got := classifyDocumentMetadata(content)
+
+	if got.DocumentType != "settlement" {
+		t.Fatalf("expected document type %q, got %q", "settlement", got.DocumentType)
+	}
+
+	if got.LegalArea != "labor" {
+		t.Fatalf("expected legal area %q, got %q", "labor", got.LegalArea)
+	}
+}
+
 func TestClassifyDocumentMetadata_NonLegalDocument(t *testing.T) {
 	content := `
 	CURRICULUM VITAE
