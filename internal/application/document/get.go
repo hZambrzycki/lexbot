@@ -24,7 +24,10 @@ type EventTrace struct {
 	AnchorSource   string
 	RelativeDays   int
 	IsBusinessDays bool
+	AddExtraDay    bool
+	CalendarScope  string
 	TriggerText    string
+	Computation    string
 }
 
 type GetDocumentDetailResult struct {
@@ -143,7 +146,10 @@ func buildEventTraceFromPersistedEvents(events []document.Event) []EventTrace {
 			AnchorSource:   e.AnchorSource,
 			RelativeDays:   e.RelativeDays,
 			IsBusinessDays: e.IsBusinessDays,
+			AddExtraDay:    e.AddExtraDay,
+			CalendarScope:  e.CalendarScope,
 			TriggerText:    e.TriggerText,
+			Computation:    e.Computation,
 		})
 	}
 	return trace

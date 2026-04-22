@@ -8,8 +8,7 @@ func TestExtractDocumentEvents_UsesStrongProceduralAnchorWhenNotificationDoesNot
 	Se concede plazo de 5 días para formular alegaciones.
 	`
 
-	got := extractDocumentEvents(content)
-
+	got := extractDocumentEvents(content, DefaultEventComputationConfig())
 	assertHasExtractedEvent(t, got, "deadline", "2026-04-14")
 
 	deadline := mustFindExtractedEvent(t, got, "deadline", "2026-04-14")
@@ -31,7 +30,7 @@ func TestExtractDocumentEvents_PrioritizesNotificationOverStrongProceduralAnchor
 	Se concede plazo de 5 días a contar desde la notificación.
 	`
 
-	got := extractDocumentEvents(content)
+	got := extractDocumentEvents(content, DefaultEventComputationConfig())
 
 	assertHasExtractedEvent(t, got, "notification", "2026-04-11")
 	assertHasExtractedEvent(t, got, "deadline", "2026-04-16")

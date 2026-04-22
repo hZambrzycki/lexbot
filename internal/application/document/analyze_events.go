@@ -22,6 +22,7 @@ type AnalyzeDocumentEventsResult struct {
 type AnalyzeDocumentEvents struct {
 	Documents        ports.DocumentRepository
 	DocumentContents ports.DocumentContentRepository
+	CaseFiles        ports.CaseFileRepository
 	Events           ports.DocumentEventRepository
 	IDs              ports.IDGenerator
 }
@@ -32,7 +33,7 @@ func (uc AnalyzeDocumentEvents) Execute(ctx context.Context, input AnalyzeDocume
 		return AnalyzeDocumentEventsResult{}, shared.ErrInvalidID
 	}
 
-	_, err := uc.Documents.GetByID(ctx, documentID)
+	doc, err := uc.Documents.GetByID(ctx, documentID)
 	if err != nil {
 		return AnalyzeDocumentEventsResult{}, err
 	}
@@ -42,7 +43,17 @@ func (uc AnalyzeDocumentEvents) Execute(ctx context.Context, input AnalyzeDocume
 		return AnalyzeDocumentEventsResult{}, err
 	}
 
-	candidates := extractDocumentEvents(content)
+	cfg := DefaultEventComputationConfig()
+
+	if uc.CaseFiles != nil && doc.CaseFileID != "" {
+		cf, err := uc.CaseFiles.GetByID(ctx, doc.CaseFileID)
+		if err != nil {
+			return AnalyzeDocumentEventsResult{}, err
+		}
+		cfg = EventComputationConfigFromCaseFile(cf)
+	}
+
+	candidates := extractDocumentEvents(content, cfg)
 
 	events := make([]document.Event, 0, len(candidates))
 	createdAt := time.Now().Format(time.RFC3339)
@@ -61,7 +72,7 @@ func (uc AnalyzeDocumentEvents) Execute(ctx context.Context, input AnalyzeDocume
 			candidate.RelativeDays,
 			candidate.IsBusinessDays,
 			candidate.AddExtraDay,
-			currentCalendarScope(),
+			cfg.CalendarScope,
 			candidate.TriggerText,
 			BuildUpcomingComputation(
 				candidate.DateKind,

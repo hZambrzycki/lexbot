@@ -77,6 +77,9 @@ func buildICSCalendar(events []UpcomingEvent) string {
 		if strings.TrimSpace(e.Computation) != "" {
 			descriptionParts = append(descriptionParts, fmt.Sprintf("Computation: %s", e.Computation))
 		}
+		if strings.TrimSpace(e.CalendarScope) != "" {
+			descriptionParts = append(descriptionParts, fmt.Sprintf("Calendar scope: %s", e.CalendarScope))
+		}
 
 		if len(e.DocumentNames) > 0 {
 			descriptionParts = append(descriptionParts, fmt.Sprintf("Documents: %s", strings.Join(e.DocumentNames, ", ")))
@@ -104,6 +107,7 @@ func buildICSCalendar(events []UpcomingEvent) string {
 			}
 
 			descriptionParts = append(descriptionParts, fmt.Sprintf("Business days: %t", e.IsBusinessDays))
+			descriptionParts = append(descriptionParts, fmt.Sprintf("Add extra day: %t", e.AddExtraDay))
 
 			if strings.TrimSpace(e.TriggerText) != "" {
 				descriptionParts = append(descriptionParts, fmt.Sprintf("Trigger: %s", e.TriggerText))

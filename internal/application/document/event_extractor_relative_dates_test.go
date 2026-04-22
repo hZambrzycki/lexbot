@@ -8,8 +8,7 @@ func TestExtractDocumentEvents_DetectsRelativeDeadlineFromNotificationDate(t *te
 	Se concede plazo de 5 días para formular alegaciones.
 	`
 
-	got := extractDocumentEvents(content)
-
+	got := extractDocumentEvents(content, DefaultEventComputationConfig())
 	if len(got) != 2 {
 		t.Fatalf("expected 2 events, got %d", len(got))
 	}
@@ -35,8 +34,7 @@ func TestExtractDocumentEvents_DetectsRelativeDeadlineWithTextualNumber(t *testi
 	En el plazo de cinco días deberá presentar escrito.
 	`
 
-	got := extractDocumentEvents(content)
-
+	got := extractDocumentEvents(content, DefaultEventComputationConfig())
 	assertHasExtractedEvent(t, got, "deadline", "2026-04-16")
 
 	deadline := mustFindExtractedEvent(t, got, "deadline", "2026-04-16")
@@ -56,8 +54,7 @@ func TestExtractDocumentEvents_IgnoresRelativeDeadlineWithoutAnchorDate(t *testi
 	Se concede plazo de 5 días para formular alegaciones.
 	`
 
-	got := extractDocumentEvents(content)
-
+	got := extractDocumentEvents(content, DefaultEventComputationConfig())
 	if len(got) != 0 {
 		t.Fatalf("expected 0 events without anchor date, got %d", len(got))
 	}
@@ -70,8 +67,7 @@ func TestExtractDocumentEvents_PrioritizesNotificationDateOverPreviousAbsoluteDa
 	Se concede plazo de 5 días para formular alegaciones.
 	`
 
-	got := extractDocumentEvents(content)
-
+	got := extractDocumentEvents(content, DefaultEventComputationConfig())
 	assertHasExtractedEvent(t, got, "notification", "2026-04-11")
 	assertHasExtractedEvent(t, got, "deadline", "2026-04-16")
 
@@ -93,8 +89,7 @@ func TestExtractDocumentEvents_DetectsNextDayAfterNotification(t *testing.T) {
 	Al día siguiente de la notificación deberá aportar la documentación.
 	`
 
-	got := extractDocumentEvents(content)
-
+	got := extractDocumentEvents(content, DefaultEventComputationConfig())
 	assertHasExtractedEvent(t, got, "notification", "2026-04-11")
 	assertHasExtractedEvent(t, got, "deadline", "2026-04-12")
 
@@ -116,8 +111,7 @@ func TestExtractDocumentEvents_DetectsRelativeDeadlineCountingFromNextDay(t *tes
 	Se concede plazo de 5 días a contar desde el día siguiente para formular alegaciones.
 	`
 
-	got := extractDocumentEvents(content)
-
+	got := extractDocumentEvents(content, DefaultEventComputationConfig())
 	assertHasExtractedEvent(t, got, "notification", "2026-04-11")
 	assertHasExtractedEvent(t, got, "deadline", "2026-04-17")
 
@@ -139,8 +133,7 @@ func TestExtractDocumentEvents_DetectsRelativeDeadlineFromNextDayVariant(t *test
 	Desde el día siguiente se concede plazo de 5 días para recurrir.
 	`
 
-	got := extractDocumentEvents(content)
-
+	got := extractDocumentEvents(content, DefaultEventComputationConfig())
 	assertHasExtractedEvent(t, got, "notification", "2026-04-11")
 	assertHasExtractedEvent(t, got, "deadline", "2026-04-17")
 
@@ -162,8 +155,7 @@ func TestExtractDocumentEvents_FromNotificationWithoutNextDay(t *testing.T) {
 	Se concede plazo de 5 días desde la notificación para formular alegaciones.
 	`
 
-	got := extractDocumentEvents(content)
-
+	got := extractDocumentEvents(content, DefaultEventComputationConfig())
 	assertHasExtractedEvent(t, got, "notification", "2026-04-11")
 	assertHasExtractedEvent(t, got, "deadline", "2026-04-16")
 
@@ -185,8 +177,7 @@ func TestExtractDocumentEvents_FromNextDayVariant_ApartirDelDiaSiguiente(t *test
 	Se concede plazo de 5 días a partir del día siguiente para formular alegaciones.
 	`
 
-	got := extractDocumentEvents(content)
-
+	got := extractDocumentEvents(content, DefaultEventComputationConfig())
 	assertHasExtractedEvent(t, got, "notification", "2026-04-11")
 	assertHasExtractedEvent(t, got, "deadline", "2026-04-17")
 
@@ -208,8 +199,7 @@ func TestExtractDocumentEvents_FromNotificationPhrase_ViaSuNotificacion(t *testi
 	Se concede plazo de 5 días desde su notificación para formular alegaciones.
 	`
 
-	got := extractDocumentEvents(content)
-
+	got := extractDocumentEvents(content, DefaultEventComputationConfig())
 	assertHasExtractedEvent(t, got, "notification", "2026-04-11")
 	assertHasExtractedEvent(t, got, "deadline", "2026-04-16")
 

@@ -21,9 +21,24 @@ func NewCaseFileRepository(db *sql.DB) *CaseFileRepository {
 func (r *CaseFileRepository) Save(ctx context.Context, cf casefile.CaseFile) error {
 	const query = `
 		INSERT INTO case_files (
-			id, client_id, reference, title, type, status, description, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			id,
+			client_id,
+			reference,
+			title,
+			type,
+			status,
+			description,
+			calendar_scope,
+			august_non_business,
+			created_at,
+			updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
+
+	augustNonBusiness := 0
+	if cf.AugustNonBusiness {
+		augustNonBusiness = 1
+	}
 
 	_, err := r.db.ExecContext(
 		ctx,
@@ -35,6 +50,8 @@ func (r *CaseFileRepository) Save(ctx context.Context, cf casefile.CaseFile) err
 		string(cf.Type),
 		string(cf.Status),
 		cf.Description,
+		cf.CalendarScope,
+		augustNonBusiness,
 		cf.CreatedAt.Time().Format(time.RFC3339),
 		cf.UpdatedAt.Time().Format(time.RFC3339),
 	)
@@ -44,21 +61,34 @@ func (r *CaseFileRepository) Save(ctx context.Context, cf casefile.CaseFile) err
 
 func (r *CaseFileRepository) GetByID(ctx context.Context, id shared.ID) (casefile.CaseFile, error) {
 	const query = `
-		SELECT id, client_id, reference, title, type, status, description, created_at, updated_at
+		SELECT
+			id,
+			client_id,
+			reference,
+			title,
+			type,
+			status,
+			description,
+			calendar_scope,
+			august_non_business,
+			created_at,
+			updated_at
 		FROM case_files
 		WHERE id = ?
 	`
 
 	var (
-		rawID     string
-		clientID  string
-		reference string
-		title     string
-		t         string
-		status    string
-		desc      string
-		createdAt string
-		updatedAt string
+		rawID             string
+		clientID          string
+		reference         string
+		title             string
+		t                 string
+		status            string
+		desc              string
+		calendarScope     string
+		augustNonBusiness int
+		createdAt         string
+		updatedAt         string
 	)
 
 	err := r.db.QueryRowContext(ctx, query, id.String()).Scan(
@@ -69,6 +99,8 @@ func (r *CaseFileRepository) GetByID(ctx context.Context, id shared.ID) (casefil
 		&t,
 		&status,
 		&desc,
+		&calendarScope,
+		&augustNonBusiness,
 		&createdAt,
 		&updatedAt,
 	)
@@ -83,20 +115,36 @@ func (r *CaseFileRepository) GetByID(ctx context.Context, id shared.ID) (casefil
 	updatedTime, _ := time.Parse(time.RFC3339, updatedAt)
 
 	return casefile.CaseFile{
-		ID:          shared.NewID(rawID),
-		ClientID:    shared.NewID(clientID),
-		Reference:   reference,
-		Title:       title,
-		Type:        casefile.Type(t),
-		Status:      casefile.Status(status),
-		Description: desc,
-		CreatedAt:   shared.Timestamp(createdTime),
-		UpdatedAt:   shared.Timestamp(updatedTime),
+		ID:                shared.NewID(rawID),
+		ClientID:          shared.NewID(clientID),
+		Reference:         reference,
+		Title:             title,
+		Type:              casefile.Type(t),
+		Status:            casefile.Status(status),
+		Description:       desc,
+		CalendarScope:     calendarScope,
+		AugustNonBusiness: augustNonBusiness == 1,
+		CreatedAt:         shared.Timestamp(createdTime),
+		UpdatedAt:         shared.Timestamp(updatedTime),
 	}, nil
 }
 
 func (r *CaseFileRepository) List(ctx context.Context) ([]casefile.CaseFile, error) {
-	const query = `SELECT id, client_id, reference, title, type, status, description, created_at, updated_at FROM case_files`
+	const query = `
+		SELECT
+			id,
+			client_id,
+			reference,
+			title,
+			type,
+			status,
+			description,
+			calendar_scope,
+			august_non_business,
+			created_at,
+			updated_at
+		FROM case_files
+	`
 
 	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
@@ -108,10 +156,32 @@ func (r *CaseFileRepository) List(ctx context.Context) ([]casefile.CaseFile, err
 
 	for rows.Next() {
 		var (
-			rawID, clientID, reference, title, t, status, desc, createdAt, updatedAt string
+			rawID             string
+			clientID          string
+			reference         string
+			title             string
+			t                 string
+			status            string
+			desc              string
+			calendarScope     string
+			augustNonBusiness int
+			createdAt         string
+			updatedAt         string
 		)
 
-		if err := rows.Scan(&rawID, &clientID, &reference, &title, &t, &status, &desc, &createdAt, &updatedAt); err != nil {
+		if err := rows.Scan(
+			&rawID,
+			&clientID,
+			&reference,
+			&title,
+			&t,
+			&status,
+			&desc,
+			&calendarScope,
+			&augustNonBusiness,
+			&createdAt,
+			&updatedAt,
+		); err != nil {
 			return nil, err
 		}
 
@@ -119,15 +189,17 @@ func (r *CaseFileRepository) List(ctx context.Context) ([]casefile.CaseFile, err
 		updatedTime, _ := time.Parse(time.RFC3339, updatedAt)
 
 		result = append(result, casefile.CaseFile{
-			ID:          shared.NewID(rawID),
-			ClientID:    shared.NewID(clientID),
-			Reference:   reference,
-			Title:       title,
-			Type:        casefile.Type(t),
-			Status:      casefile.Status(status),
-			Description: desc,
-			CreatedAt:   shared.Timestamp(createdTime),
-			UpdatedAt:   shared.Timestamp(updatedTime),
+			ID:                shared.NewID(rawID),
+			ClientID:          shared.NewID(clientID),
+			Reference:         reference,
+			Title:             title,
+			Type:              casefile.Type(t),
+			Status:            casefile.Status(status),
+			Description:       desc,
+			CalendarScope:     calendarScope,
+			AugustNonBusiness: augustNonBusiness == 1,
+			CreatedAt:         shared.Timestamp(createdTime),
+			UpdatedAt:         shared.Timestamp(updatedTime),
 		})
 	}
 
@@ -135,7 +207,22 @@ func (r *CaseFileRepository) List(ctx context.Context) ([]casefile.CaseFile, err
 }
 
 func (r *CaseFileRepository) ListByClientID(ctx context.Context, clientID shared.ID) ([]casefile.CaseFile, error) {
-	const query = `SELECT id, client_id, reference, title, type, status, description, created_at, updated_at FROM case_files WHERE client_id = ?`
+	const query = `
+		SELECT
+			id,
+			client_id,
+			reference,
+			title,
+			type,
+			status,
+			description,
+			calendar_scope,
+			august_non_business,
+			created_at,
+			updated_at
+		FROM case_files
+		WHERE client_id = ?
+	`
 
 	rows, err := r.db.QueryContext(ctx, query, clientID.String())
 	if err != nil {
@@ -147,10 +234,32 @@ func (r *CaseFileRepository) ListByClientID(ctx context.Context, clientID shared
 
 	for rows.Next() {
 		var (
-			rawID, cID, reference, title, t, status, desc, createdAt, updatedAt string
+			rawID             string
+			cID               string
+			reference         string
+			title             string
+			t                 string
+			status            string
+			desc              string
+			calendarScope     string
+			augustNonBusiness int
+			createdAt         string
+			updatedAt         string
 		)
 
-		if err := rows.Scan(&rawID, &cID, &reference, &title, &t, &status, &desc, &createdAt, &updatedAt); err != nil {
+		if err := rows.Scan(
+			&rawID,
+			&cID,
+			&reference,
+			&title,
+			&t,
+			&status,
+			&desc,
+			&calendarScope,
+			&augustNonBusiness,
+			&createdAt,
+			&updatedAt,
+		); err != nil {
 			return nil, err
 		}
 
@@ -158,17 +267,56 @@ func (r *CaseFileRepository) ListByClientID(ctx context.Context, clientID shared
 		updatedTime, _ := time.Parse(time.RFC3339, updatedAt)
 
 		result = append(result, casefile.CaseFile{
-			ID:          shared.NewID(rawID),
-			ClientID:    shared.NewID(cID),
-			Reference:   reference,
-			Title:       title,
-			Type:        casefile.Type(t),
-			Status:      casefile.Status(status),
-			Description: desc,
-			CreatedAt:   shared.Timestamp(createdTime),
-			UpdatedAt:   shared.Timestamp(updatedTime),
+			ID:                shared.NewID(rawID),
+			ClientID:          shared.NewID(cID),
+			Reference:         reference,
+			Title:             title,
+			Type:              casefile.Type(t),
+			Status:            casefile.Status(status),
+			Description:       desc,
+			CalendarScope:     calendarScope,
+			AugustNonBusiness: augustNonBusiness == 1,
+			CreatedAt:         shared.Timestamp(createdTime),
+			UpdatedAt:         shared.Timestamp(updatedTime),
 		})
 	}
 
 	return result, rows.Err()
+}
+
+func (r *CaseFileRepository) Update(ctx context.Context, cf casefile.CaseFile) error {
+	const query = `
+		UPDATE case_files
+		SET
+			reference = ?,
+			title = ?,
+			type = ?,
+			status = ?,
+			description = ?,
+			calendar_scope = ?,
+			august_non_business = ?,
+			updated_at = ?
+		WHERE id = ?
+	`
+
+	augustNonBusiness := 0
+	if cf.AugustNonBusiness {
+		augustNonBusiness = 1
+	}
+
+	_, err := r.db.ExecContext(
+		ctx,
+		query,
+		cf.Reference,
+		cf.Title,
+		string(cf.Type),
+		string(cf.Status),
+		cf.Description,
+		cf.CalendarScope,
+		augustNonBusiness,
+		cf.UpdatedAt.Time().Format(time.RFC3339),
+		cf.ID.String(),
+	)
+
+	return err
 }

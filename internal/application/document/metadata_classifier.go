@@ -43,6 +43,13 @@ func hasEnoughLegalSignal(text string) bool {
 		"tarjeta de residencia",
 		"recurso de reposicion",
 		"recurso de apelacion",
+		"notifiquese",
+		"se concede plazo",
+		"dias habiles",
+		"dias naturales",
+		"formular alegaciones",
+		"aportar la documentacion",
+		"presentar escrito",
 	) {
 		return true
 	}
@@ -84,6 +91,13 @@ func hasEnoughLegalSignal(text string) bool {
 		"liquido a percibir",
 		"base de cotizacion",
 		"irpf",
+		"notifiquese",
+		"plazo",
+		"alegaciones",
+		"dias habiles",
+		"dias naturales",
+		"aportar la documentacion",
+		"presentar escrito",
 	}
 
 	score := countKeywordMatches(text, strongSignals)
@@ -152,6 +166,18 @@ func classifyDocumentType(text string) string {
 		"razonamientos juridicos",
 	):
 		return "order_decision"
+
+	case containsAny(text,
+		"notifiquese",
+		"se concede plazo",
+		"plazo",
+		"dias habiles",
+		"dias naturales",
+		"formular alegaciones",
+		"aportar la documentacion",
+		"presentar escrito",
+	):
+		return "order"
 	}
 
 	type docRule struct {
@@ -376,6 +402,11 @@ func classifyLegalArea(text string) string {
 				"notifiquese",
 				"plazo",
 				"alegaciones",
+				"dias habiles",
+				"dias naturales",
+				"aportar la documentacion",
+				"presentar escrito",
+				"se concede plazo",
 			},
 			minScore: 2,
 		},

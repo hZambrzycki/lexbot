@@ -9,8 +9,7 @@ func TestExtractDocumentEvents_DetectsSpanishTextualDates(t *testing.T) {
 	Notifíquese la resolución el 11 de abril de 2026.
 	`
 
-	got := extractDocumentEvents(content)
-
+	got := extractDocumentEvents(content, DefaultEventComputationConfig())
 	if len(got) != 3 {
 		t.Fatalf("expected 3 events, got %d", len(got))
 	}

@@ -18,8 +18,6 @@ const (
 	anchorSourcePreviousLine         = "previous_line"
 	anchorSourceNotificationLine     = "notification_line"
 	anchorSourceProceduralAnchorLine = "procedural_anchor_line"
-
-	defaultCalendarScope = domaincalendar.ScopeMadrid
 )
 
 type extractedEventCandidate struct {
@@ -73,7 +71,7 @@ var (
 	)
 )
 
-func extractDocumentEvents(content string) []extractedEventCandidate {
+func extractDocumentEvents(content string, cfg EventComputationConfig) []extractedEventCandidate {
 	text := normalizeEventText(content)
 	if text == "" {
 		return []extractedEventCandidate{}
@@ -134,7 +132,13 @@ func extractDocumentEvents(content string) []extractedEventCandidate {
 				continue
 			}
 
-			targetDate, ok := computeRelativeTargetDate(anchorDate, match.Days, match.IsBusinessDays, match.AddExtraDay)
+			targetDate, ok := computeRelativeTargetDate(
+				anchorDate,
+				match.Days,
+				match.IsBusinessDays,
+				match.AddExtraDay,
+				cfg,
+			)
 			if !ok {
 				continue
 			}
@@ -414,14 +418,6 @@ func extractRelativeDateMatchesFromLine(line string) []relativeDateMatch {
 	return deduplicateRelativeMatches(result)
 }
 
-func firstMatchText(re *regexp.Regexp, value string) string {
-	match := re.FindStringSubmatch(value)
-	if len(match) < 2 {
-		return ""
-	}
-	return strings.TrimSpace(match[1])
-}
-
 func buildRelativeTriggerText(normalizedLine, baseTrigger string, addExtraDay bool) string {
 	baseTrigger = strings.TrimSpace(baseTrigger)
 	if baseTrigger == "" {
@@ -498,21 +494,31 @@ func deduplicateRelativeMatches(items []relativeDateMatch) []relativeDateMatch {
 	return result
 }
 
-func currentCalendarScope() string {
-	return defaultCalendarScope
-}
-
-func currentProceduralRules() domaincalendar.ProceduralRules {
-	return domaincalendar.ProceduralRules{
-		AugustNonBusiness: true,
+func calendarForRange(scope string, startYear, endYear int) domaincalendar.Calendar {
+	if endYear < startYear {
+		endYear = startYear
 	}
+
+	scope = strings.TrimSpace(scope)
+	if scope == "" {
+		scope = domaincalendar.ScopeMadrid
+	}
+
+	holidays := make([]string, 0)
+	for year := startYear; year <= endYear; year++ {
+		holidays = append(holidays, domaincalendar.Holidays(scope, year)...)
+	}
+
+	return domaincalendar.NewCalendar(holidays)
 }
 
-func calendarForYear(year int) domaincalendar.Calendar {
-	return domaincalendar.NewCalendar(domaincalendar.Holidays(currentCalendarScope(), year))
-}
-
-func computeRelativeTargetDate(anchorDate string, days int, isBusinessDays bool, addExtraDay bool) (string, bool) {
+func computeRelativeTargetDate(
+	anchorDate string,
+	days int,
+	isBusinessDays bool,
+	addExtraDay bool,
+	cfg EventComputationConfig,
+) (string, bool) {
 	if strings.TrimSpace(anchorDate) == "" || days <= 0 {
 		return "", false
 	}
@@ -529,8 +535,13 @@ func computeRelativeTargetDate(anchorDate string, days int, isBusinessDays bool,
 
 	var target time.Time
 	if isBusinessDays {
-		cal := calendarForYear(baseDate.Year())
-		target = cal.AddBusinessDaysWithRules(baseDate, totalDays, currentProceduralRules())
+		endYear := baseDate.Year()
+		if totalDays > 0 {
+			endYear = baseDate.AddDate(0, 0, totalDays+370).Year()
+		}
+
+		cal := calendarForRange(cfg.CalendarScope, baseDate.Year(), endYear)
+		target = cal.AddBusinessDaysWithRules(baseDate, totalDays, cfg.ProceduralRules)
 	} else {
 		target = baseDate.AddDate(0, 0, totalDays)
 	}

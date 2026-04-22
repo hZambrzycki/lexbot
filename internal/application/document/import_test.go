@@ -198,7 +198,9 @@ func runTestMigrations(t *testing.T, db *sql.DB) {
 		filepath.Join("..", "..", "..", "migrations", "004_document_events.sql"),
 		filepath.Join("..", "..", "..", "migrations", "005_document_event_context.sql"),
 		filepath.Join("..", "..", "..", "migrations", "006_document_event_semantics.sql"),
+		filepath.Join("..", "..", "..", "migrations", "007_case_file_event_config.sql"),
 	}
+
 	for _, path := range paths {
 		if err := reposqlite.RunMigrations(db, path); err != nil {
 			t.Fatalf("RunMigrations(%s): %v", path, err)

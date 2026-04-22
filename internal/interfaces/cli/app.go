@@ -22,8 +22,10 @@ type App struct {
 	GetClient                  clientapp.GetClient
 	ListClients                clientapp.ListClients
 	CreateCaseFile             casefileapp.CreateCaseFile
+	UpdateCaseFileConfig       casefileapp.UpdateCaseFileConfig
 	ListCaseFiles              casefileapp.ListCaseFiles
 	ListCaseFilesByClient      casefileapp.ListCaseFilesByClient
+	GetCaseFileDashboard       casefileapp.GetCaseFileDashboard
 	AddNote                    noteapp.AddNote
 	ListNotesByCaseFile        noteapp.ListNotesByCaseFile
 	AttachDocument             documentapp.AttachDocument
@@ -48,6 +50,8 @@ type App struct {
 	ListEventsByCaseFile       documentapp.ListEventsByCaseFile
 	ListUpcomingEvents         documentapp.ListUpcomingEvents
 	ExportUpcomingEventsICS    documentapp.ExportUpcomingEventsICS
+	FixCaseFile                casefileapp.FixCaseFile
+	AuditCaseFile              casefileapp.AuditCaseFile
 }
 
 func (a App) Run(ctx context.Context, args []string) error {
@@ -70,8 +74,16 @@ func (a App) Run(ctx context.Context, args []string) error {
 		return a.runListClients(ctx)
 	case "case-create":
 		return a.runCreateCaseFile(ctx, args[1:])
+	case "case-dashboard":
+		return a.runCaseDashboard(ctx, args[1:])
+	case "case-fix":
+		return a.runCaseFix(ctx, args[1:])
+	case "case-update-config":
+		return a.runUpdateCaseFileConfig(ctx, args[1:])
 	case "case-list":
 		return a.runListCaseFiles(ctx)
+	case "case-audit":
+		return a.runCaseAudit(ctx, args[1:])
 	case "case-list-by-client":
 		return a.runListCaseFilesByClient(ctx, args[1:])
 	case "note-add":
@@ -136,7 +148,8 @@ func (a App) printHelp() {
 	fmt.Fprintln(a.Out, `  client-create "<name>" "<email>" "<phone>" "<identifier>"`)
 	fmt.Fprintln(a.Out, `  client-get "<clientID>"`)
 	fmt.Fprintln(a.Out, "  client-list")
-	fmt.Fprintln(a.Out, `  case-create "<clientID>" "<reference>" "<title>" "<type>" "<description>"`)
+	fmt.Fprintln(a.Out, `  case-create "<clientID>" "<reference>" "<title>" "<type>" "<description>" [--calendar-scope "<scope>"] [--august-non-business "<true|false>"]`)
+	fmt.Fprintln(a.Out, `  case-update-config "<caseFileID>" [--calendar-scope "<scope>"] [--august-non-business "<true|false>"]`)
 	fmt.Fprintln(a.Out, "  case-list")
 	fmt.Fprintln(a.Out, `  case-list-by-client "<clientID>"`)
 	fmt.Fprintln(a.Out, `  note-add "<caseFileID>" "<title>" "<content>"`)
@@ -164,6 +177,9 @@ func (a App) printHelp() {
 	fmt.Fprintln(a.Out, `  search "<query>"`)
 	fmt.Fprintln(a.Out, `  search "<query>" --case "<caseFileID>"`)
 	fmt.Fprintln(a.Out, `  case-get "<caseFileID>"`)
+	fmt.Fprintln(a.Out, `  case-dashboard "<caseFileID>"`)
+	fmt.Fprintln(a.Out, `  case-fix "<caseFileID>"`)
+	fmt.Fprintln(a.Out, `  case-audit "<caseFileID>"`)
 	fmt.Fprintln(a.Out, "  storage-audit")
 	fmt.Fprintln(a.Out, "  storage-clean-orphans")
 	fmt.Fprintln(a.Out, "  mime-normalize")
@@ -322,7 +338,7 @@ func (a App) runListClients(ctx context.Context) error {
 
 func (a App) runCreateCaseFile(ctx context.Context, args []string) error {
 	if len(args) < 5 {
-		return fmt.Errorf(`usage: case-create "<clientID>" "<reference>" "<title>" "<type>" "<description>"`)
+		return fmt.Errorf(`usage: case-create "<clientID>" "<reference>" "<title>" "<type>" "<description>" [--calendar-scope "<scope>"] [--august-non-business "<true|false>"]`)
 	}
 
 	cfType, err := parseCaseFileType(args[3])
@@ -330,12 +346,50 @@ func (a App) runCreateCaseFile(ctx context.Context, args []string) error {
 		return err
 	}
 
+	calendarScope := ""
+	var augustNonBusiness *bool
+
+	rest := args[5:]
+	for i := 0; i < len(rest); i++ {
+		switch rest[i] {
+		case "--calendar-scope":
+			if i+1 >= len(rest) {
+				return fmt.Errorf(`usage: case-create "<clientID>" "<reference>" "<title>" "<type>" "<description>" [--calendar-scope "<scope>"] [--august-non-business "<true|false>"]`)
+			}
+			calendarScope = strings.TrimSpace(rest[i+1])
+			i++
+
+		case "--august-non-business":
+			if i+1 >= len(rest) {
+				return fmt.Errorf(`usage: case-create "<clientID>" "<reference>" "<title>" "<type>" "<description>" [--calendar-scope "<scope>"] [--august-non-business "<true|false>"]`)
+			}
+
+			value := strings.TrimSpace(strings.ToLower(rest[i+1]))
+			switch value {
+			case "true":
+				v := true
+				augustNonBusiness = &v
+			case "false":
+				v := false
+				augustNonBusiness = &v
+			default:
+				return fmt.Errorf(`invalid value for --august-non-business: use "true" or "false"`)
+			}
+			i++
+
+		default:
+			return fmt.Errorf(`usage: case-create "<clientID>" "<reference>" "<title>" "<type>" "<description>" [--calendar-scope "<scope>"] [--august-non-business "<true|false>"]`)
+		}
+	}
+
 	caseFileEntity, err := a.CreateCaseFile.Execute(ctx, casefileapp.CreateCaseFileInput{
-		ClientID:    args[0],
-		Reference:   args[1],
-		Title:       args[2],
-		Type:        cfType,
-		Description: args[4],
+		ClientID:          args[0],
+		Reference:         args[1],
+		Title:             args[2],
+		Type:              cfType,
+		Description:       args[4],
+		CalendarScope:     calendarScope,
+		AugustNonBusiness: augustNonBusiness,
 	})
 	if err != nil {
 		return err
@@ -344,6 +398,76 @@ func (a App) runCreateCaseFile(ctx context.Context, args []string) error {
 	fmt.Fprintln(a.Out, "Case file created successfully")
 	fmt.Fprintf(a.Out, "ID: %s\n", caseFileEntity.ID)
 	fmt.Fprintf(a.Out, "Title: %s\n", caseFileEntity.Title)
+	fmt.Fprintf(a.Out, "Calendar scope: %s\n", caseFileEntity.CalendarScope)
+	fmt.Fprintf(a.Out, "August non-business: %v\n", caseFileEntity.AugustNonBusiness)
+	return nil
+}
+
+func (a App) runUpdateCaseFileConfig(ctx context.Context, args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf(`usage: case-update-config "<caseFileID>" [--calendar-scope "<scope>"] [--august-non-business "<true|false>"]`)
+	}
+
+	caseFileID := strings.TrimSpace(args[0])
+	if caseFileID == "" {
+		return fmt.Errorf(`usage: case-update-config "<caseFileID>" [--calendar-scope "<scope>"] [--august-non-business "<true|false>"]`)
+	}
+
+	var calendarScope *string
+	var augustNonBusiness *bool
+
+	rest := args[1:]
+	for i := 0; i < len(rest); i++ {
+		switch rest[i] {
+		case "--calendar-scope":
+			if i+1 >= len(rest) {
+				return fmt.Errorf(`usage: case-update-config "<caseFileID>" [--calendar-scope "<scope>"] [--august-non-business "<true|false>"]`)
+			}
+			v := strings.TrimSpace(rest[i+1])
+			calendarScope = &v
+			i++
+
+		case "--august-non-business":
+			if i+1 >= len(rest) {
+				return fmt.Errorf(`usage: case-update-config "<caseFileID>" [--calendar-scope "<scope>"] [--august-non-business "<true|false>"]`)
+			}
+
+			value := strings.TrimSpace(strings.ToLower(rest[i+1]))
+			switch value {
+			case "true":
+				v := true
+				augustNonBusiness = &v
+			case "false":
+				v := false
+				augustNonBusiness = &v
+			default:
+				return fmt.Errorf(`invalid value for --august-non-business: use "true" or "false"`)
+			}
+			i++
+
+		default:
+			return fmt.Errorf(`usage: case-update-config "<caseFileID>" [--calendar-scope "<scope>"] [--august-non-business "<true|false>"]`)
+		}
+	}
+
+	if calendarScope == nil && augustNonBusiness == nil {
+		return fmt.Errorf(`usage: case-update-config "<caseFileID>" [--calendar-scope "<scope>"] [--august-non-business "<true|false>"]`)
+	}
+
+	cf, err := a.UpdateCaseFileConfig.Execute(ctx, casefileapp.UpdateCaseFileConfigInput{
+		CaseFileID:        caseFileID,
+		CalendarScope:     calendarScope,
+		AugustNonBusiness: augustNonBusiness,
+	})
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintln(a.Out, "Case file config updated successfully")
+	fmt.Fprintf(a.Out, "ID: %s\n", cf.ID)
+	fmt.Fprintf(a.Out, "Title: %s\n", cf.Title)
+	fmt.Fprintf(a.Out, "Calendar scope: %s\n", cf.CalendarScope)
+	fmt.Fprintf(a.Out, "August non-business: %v\n", cf.AugustNonBusiness)
 	return nil
 }
 
@@ -364,6 +488,13 @@ func (a App) runListCaseFiles(ctx context.Context) error {
 			a.Out,
 			"  %d. %s | client=%s | ref=%s | title=%s | type=%s | status=%s\n",
 			i+1, cf.ID, cf.ClientID, cf.Reference, cf.Title, cf.Type, cf.Status,
+		)
+
+		fmt.Fprintf(
+			a.Out,
+			"     scope=%s | august=%v\n",
+			cf.CalendarScope,
+			cf.AugustNonBusiness,
 		)
 	}
 	return nil
@@ -392,6 +523,13 @@ func (a App) runListCaseFilesByClient(ctx context.Context, args []string) error 
 			a.Out,
 			"  %d. %s | ref=%s | title=%s | type=%s | status=%s\n",
 			i+1, cf.ID, cf.Reference, cf.Title, cf.Type, cf.Status,
+		)
+
+		fmt.Fprintf(
+			a.Out,
+			"     scope=%s | august=%v\n",
+			cf.CalendarScope,
+			cf.AugustNonBusiness,
 		)
 	}
 	return nil
@@ -782,18 +920,25 @@ func (a App) runGetDocument(ctx context.Context, args []string) error {
 			}
 			if e.DateKind == "relative" {
 				fmt.Fprintf(a.Out, "     business_days=%v\n", e.IsBusinessDays)
+				fmt.Fprintf(a.Out, "     add_extra_day=%v\n", e.AddExtraDay)
+			}
+			if strings.TrimSpace(e.CalendarScope) != "" {
+				fmt.Fprintf(a.Out, "     calendar_scope=%s\n", e.CalendarScope)
 			}
 			if strings.TrimSpace(e.TriggerText) != "" {
 				fmt.Fprintf(a.Out, "     trigger=%s\n", e.TriggerText)
 			}
 
-			computation := documentapp.BuildUpcomingComputation(
-				e.DateKind,
-				e.AnchorDate,
-				e.RelativeDays,
-				e.IsBusinessDays,
-				e.TriggerText,
-			)
+			computation := strings.TrimSpace(e.Computation)
+			if computation == "" {
+				computation = documentapp.BuildUpcomingComputation(
+					e.DateKind,
+					e.AnchorDate,
+					e.RelativeDays,
+					e.IsBusinessDays,
+					e.TriggerText,
+				)
+			}
 
 			if strings.TrimSpace(computation) != "" {
 				fmt.Fprintf(a.Out, "     computation=%s\n", computation)
@@ -983,6 +1128,8 @@ func (a App) runGetCaseFile(ctx context.Context, args []string) error {
 	fmt.Fprintf(a.Out, "Type: %s\n", detail.CaseFile.Type)
 	fmt.Fprintf(a.Out, "Status: %s\n", detail.CaseFile.Status)
 	fmt.Fprintf(a.Out, "Description: %s\n", detail.CaseFile.Description)
+	fmt.Fprintf(a.Out, "Calendar scope: %s\n", detail.CaseFile.CalendarScope)
+	fmt.Fprintf(a.Out, "August non-business: %v\n", detail.CaseFile.AugustNonBusiness)
 	fmt.Fprintln(a.Out)
 
 	fmt.Fprintf(a.Out, "Notes (%d):\n", len(detail.Notes))
@@ -1163,6 +1310,12 @@ func (a App) runAnalyzeAllDocumentEvents(ctx context.Context, args []string) err
 
 	if caseFileID != "" {
 		fmt.Fprintf(a.Out, "Document event analysis for case file %s\n", caseFileID)
+		if strings.TrimSpace(result.CalendarScope) != "" {
+			fmt.Fprintf(a.Out, "Calendar scope: %s\n", result.CalendarScope)
+		}
+		if result.AugustNonBusiness != nil {
+			fmt.Fprintf(a.Out, "August non-business: %v\n", *result.AugustNonBusiness)
+		}
 	} else {
 		fmt.Fprintln(a.Out, "Document event analysis (all)")
 	}
@@ -1199,12 +1352,48 @@ func (a App) runListDocumentEvents(ctx context.Context, args []string) error {
 	for i, e := range events {
 		fmt.Fprintf(
 			a.Out,
-			"  %d. type=%s | date=%s\n     source=%s\n",
+			"  %d. type=%s | date=%s | kind=%s\n",
 			i+1,
 			e.EventType,
 			e.EventDate,
-			e.SourceText,
+			e.DateKind,
 		)
+		fmt.Fprintf(a.Out, "     source=%s\n", e.SourceText)
+
+		if strings.TrimSpace(e.AnchorDate) != "" {
+			fmt.Fprintf(a.Out, "     anchor_date=%s\n", e.AnchorDate)
+		}
+		if strings.TrimSpace(e.AnchorSource) != "" {
+			fmt.Fprintf(a.Out, "     anchor_source=%s\n", e.AnchorSource)
+		}
+		if e.RelativeDays > 0 {
+			fmt.Fprintf(a.Out, "     relative_days=%d\n", e.RelativeDays)
+		}
+		if e.DateKind == "relative" {
+			fmt.Fprintf(a.Out, "     business_days=%v\n", e.IsBusinessDays)
+			fmt.Fprintf(a.Out, "     add_extra_day=%v\n", e.AddExtraDay)
+		}
+		if strings.TrimSpace(e.CalendarScope) != "" {
+			fmt.Fprintf(a.Out, "     calendar_scope=%s\n", e.CalendarScope)
+		}
+		if strings.TrimSpace(e.TriggerText) != "" {
+			fmt.Fprintf(a.Out, "     trigger=%s\n", e.TriggerText)
+		}
+
+		computation := strings.TrimSpace(e.Computation)
+		if computation == "" {
+			computation = documentapp.BuildUpcomingComputation(
+				e.DateKind,
+				e.AnchorDate,
+				e.RelativeDays,
+				e.IsBusinessDays,
+				e.TriggerText,
+			)
+		}
+
+		if strings.TrimSpace(computation) != "" {
+			fmt.Fprintf(a.Out, "     computation=%s\n", computation)
+		}
 	}
 
 	return nil
@@ -1247,14 +1436,50 @@ func (a App) runListEventsByCaseFile(ctx context.Context, args []string) error {
 	for i, e := range events {
 		fmt.Fprintf(
 			a.Out,
-			"  %d. date=%s | type=%s | document=%s\n     document_id=%s\n     source=%s\n",
+			"  %d. date=%s | type=%s | kind=%s | document=%s\n",
 			i+1,
 			e.EventDate,
 			e.EventType,
+			e.DateKind,
 			e.OriginalName,
-			e.DocumentID,
-			e.SourceText,
 		)
+		fmt.Fprintf(a.Out, "     document_id=%s\n", e.DocumentID)
+		fmt.Fprintf(a.Out, "     source=%s\n", e.SourceText)
+
+		if strings.TrimSpace(e.AnchorDate) != "" {
+			fmt.Fprintf(a.Out, "     anchor_date=%s\n", e.AnchorDate)
+		}
+		if strings.TrimSpace(e.AnchorSource) != "" {
+			fmt.Fprintf(a.Out, "     anchor_source=%s\n", e.AnchorSource)
+		}
+		if e.RelativeDays > 0 {
+			fmt.Fprintf(a.Out, "     relative_days=%d\n", e.RelativeDays)
+		}
+		if e.DateKind == "relative" {
+			fmt.Fprintf(a.Out, "     business_days=%v\n", e.IsBusinessDays)
+			fmt.Fprintf(a.Out, "     add_extra_day=%v\n", e.AddExtraDay)
+		}
+		if strings.TrimSpace(e.CalendarScope) != "" {
+			fmt.Fprintf(a.Out, "     calendar_scope=%s\n", e.CalendarScope)
+		}
+		if strings.TrimSpace(e.TriggerText) != "" {
+			fmt.Fprintf(a.Out, "     trigger=%s\n", e.TriggerText)
+		}
+
+		computation := strings.TrimSpace(e.Computation)
+		if computation == "" {
+			computation = documentapp.BuildUpcomingComputation(
+				e.DateKind,
+				e.AnchorDate,
+				e.RelativeDays,
+				e.IsBusinessDays,
+				e.TriggerText,
+			)
+		}
+
+		if strings.TrimSpace(computation) != "" {
+			fmt.Fprintf(a.Out, "     computation=%s\n", computation)
+		}
 	}
 
 	return nil
@@ -1362,12 +1587,16 @@ func (a App) runListUpcomingEvents(ctx context.Context, args []string) error {
 			if e.DateKind == "relative" {
 				fmt.Fprintf(
 					a.Out,
-					"     derived=relative | anchor=%s (%s) | relative_days=%d | business_days=%v\n",
+					"     derived=relative | anchor=%s (%s) | relative_days=%d | business_days=%v | add_extra_day=%v\n",
 					e.AnchorDate,
 					e.AnchorSource,
 					e.RelativeDays,
 					e.IsBusinessDays,
+					e.AddExtraDay,
 				)
+				if strings.TrimSpace(e.CalendarScope) != "" {
+					fmt.Fprintf(a.Out, "     calendar_scope=%s\n", e.CalendarScope)
+				}
 				if strings.TrimSpace(e.TriggerText) != "" {
 					fmt.Fprintf(a.Out, "     trigger=%s\n", e.TriggerText)
 				}
@@ -1376,6 +1605,9 @@ func (a App) runListUpcomingEvents(ctx context.Context, args []string) error {
 				}
 			} else if e.DateKind == "absolute" {
 				fmt.Fprintln(a.Out, "     derived=absolute")
+				if strings.TrimSpace(e.CalendarScope) != "" {
+					fmt.Fprintf(a.Out, "     calendar_scope=%s\n", e.CalendarScope)
+				}
 				if strings.TrimSpace(e.Computation) != "" {
 					fmt.Fprintf(a.Out, "     computation=%s\n", e.Computation)
 				}
@@ -1431,6 +1663,262 @@ func (a App) runExportUpcomingEventsICS(ctx context.Context, args []string) erro
 	fmt.Fprintln(a.Out, "ICS exported successfully")
 	fmt.Fprintf(a.Out, "Events exported: %d\n", result.EventCount)
 	fmt.Fprintf(a.Out, "Output: %s\n", outputPath)
+
+	return nil
+}
+
+func (a App) runCaseDashboard(ctx context.Context, args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf(`usage: case-dashboard "<caseFileID>"`)
+	}
+
+	result, err := a.GetCaseFileDashboard.Execute(ctx, casefileapp.GetCaseFileDashboardInput{
+		CaseFileID: args[0],
+	})
+	if err != nil {
+		return err
+	}
+
+	cf := result.CaseFile
+
+	fmt.Fprintln(a.Out, "Case file dashboard")
+	fmt.Fprintf(a.Out, "ID: %s\n", cf.ID)
+	fmt.Fprintf(a.Out, "Reference: %s\n", cf.Reference)
+	fmt.Fprintf(a.Out, "Title: %s\n", cf.Title)
+	fmt.Fprintf(a.Out, "Type: %s\n", cf.Type)
+	fmt.Fprintf(a.Out, "Status: %s\n", cf.Status)
+	fmt.Fprintf(a.Out, "Calendar scope: %s\n", cf.CalendarScope)
+	fmt.Fprintf(a.Out, "August non-business: %v\n", cf.AugustNonBusiness)
+	fmt.Fprintln(a.Out)
+
+	fmt.Fprintln(a.Out, "Summary")
+	fmt.Fprintf(a.Out, "Notes: %d\n", result.NoteCount)
+	fmt.Fprintf(a.Out, "Documents: %d\n", result.DocumentCount)
+	fmt.Fprintf(a.Out, "Documents without text: %d\n", result.DocumentsWithoutText)
+	if result.DocumentsWithoutText > 0 {
+		fmt.Fprintln(a.Out, "  Missing extraction:")
+		for _, name := range result.DocumentsWithoutTextList {
+			fmt.Fprintf(a.Out, "    - %s\n", name)
+		}
+	}
+	fmt.Fprintf(a.Out, "Documents with unknown metadata: %d\n", result.DocumentsWithUnknownMetadata)
+	if result.DocumentsWithUnknownMetadata > 0 {
+		fmt.Fprintln(a.Out, "  Unknown metadata:")
+		for _, name := range result.DocumentsWithUnknownMetadataList {
+			fmt.Fprintf(a.Out, "    - %s\n", name)
+		}
+	}
+
+	fmt.Fprintf(a.Out, "Documents without detected events: %d\n", result.DocumentsWithoutEvents)
+	if result.DocumentsWithoutEvents > 0 {
+		fmt.Fprintln(a.Out, "  No detected events:")
+		for _, name := range result.DocumentsWithoutEventsList {
+			fmt.Fprintf(a.Out, "    - %s\n", name)
+		}
+	}
+	fmt.Fprintf(a.Out, "Needs attention: %v\n", result.NeedsAttention)
+	fmt.Fprintf(a.Out, "Top alert: %s\n", result.TopAlert)
+	fmt.Fprintln(a.Out)
+	fmt.Fprintln(a.Out, "Recommended next action")
+	fmt.Fprintf(a.Out, "%s\n", result.RecommendedNextAction)
+
+	fmt.Fprintln(a.Out)
+	fmt.Fprintln(a.Out, "Hint")
+	fmt.Fprintf(a.Out, "%s\n", result.ProceduralHint)
+	fmt.Fprintf(a.Out, "Events: %d\n", len(result.UpcomingEvents))
+	fmt.Fprintf(a.Out, "  Overdue: %d\n", result.OverdueCount)
+	fmt.Fprintf(a.Out, "  Today: %d\n", result.TodayCount)
+	fmt.Fprintf(a.Out, "  Upcoming: %d\n", result.UpcomingCount)
+	fmt.Fprintf(a.Out, "  Critical: %d\n", result.CriticalCount)
+	fmt.Fprintf(a.Out, "  High: %d\n", result.HighCount)
+	fmt.Fprintf(a.Out, "  Medium: %d\n", result.MediumCount)
+	fmt.Fprintf(a.Out, "  Low: %d\n", result.LowCount)
+	fmt.Fprintln(a.Out)
+
+	if len(result.UpcomingEvents) == 0 {
+		fmt.Fprintln(a.Out, "Upcoming events:")
+		fmt.Fprintln(a.Out, "  none")
+		return nil
+	}
+
+	overdueEvents := make([]documentapp.UpcomingEvent, 0)
+	todayEvents := make([]documentapp.UpcomingEvent, 0)
+	futureEvents := make([]documentapp.UpcomingEvent, 0)
+
+	for _, e := range result.UpcomingEvents {
+		switch e.Status {
+		case "overdue":
+			overdueEvents = append(overdueEvents, e)
+		case "today":
+			todayEvents = append(todayEvents, e)
+		default:
+			futureEvents = append(futureEvents, e)
+		}
+	}
+
+	printDashboardEventSection := func(title string, events []documentapp.UpcomingEvent) {
+		fmt.Fprintf(a.Out, "%s (%d):\n", title, len(events))
+		if len(events) == 0 {
+			fmt.Fprintln(a.Out, "  none")
+			return
+		}
+
+		limit := len(events)
+		if limit > 10 {
+			limit = 10
+		}
+
+		for i := 0; i < limit; i++ {
+			e := events[i]
+
+			statusText := e.Status
+			if e.Status == "overdue" {
+				statusText = fmt.Sprintf("overdue (%d days ago)", -e.DaysRemaining)
+			} else if e.Status == "today" {
+				statusText = "today"
+			} else {
+				statusText = fmt.Sprintf("in %d days", e.DaysRemaining)
+			}
+
+			fmt.Fprintf(
+				a.Out,
+				"  %d. %s | %s | %s | %s\n",
+				i+1,
+				e.EventDate,
+				e.EventType,
+				strings.ToUpper(e.Priority),
+				statusText,
+			)
+
+			if len(e.DocumentNames) > 0 {
+				fmt.Fprintf(a.Out, "     documents=%s\n", strings.Join(e.DocumentNames, ", "))
+			}
+
+			if strings.TrimSpace(e.Computation) != "" {
+				fmt.Fprintf(a.Out, "     computation=%s\n", e.Computation)
+			}
+		}
+
+		if len(events) > limit {
+			fmt.Fprintf(a.Out, "  ... and %d more\n", len(events)-limit)
+		}
+	}
+
+	printDashboardEventSection("Overdue", overdueEvents)
+	fmt.Fprintln(a.Out)
+	printDashboardEventSection("Today", todayEvents)
+	fmt.Fprintln(a.Out)
+	printDashboardEventSection("Upcoming", futureEvents)
+
+	return nil
+}
+
+func (a App) runCaseFix(ctx context.Context, args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf(`usage: case-fix "<caseFileID>"`)
+	}
+
+	result, err := a.FixCaseFile.Execute(ctx, casefileapp.FixCaseFileInput{
+		CaseFileID: args[0],
+	})
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintln(a.Out, "Case file fix completed")
+	fmt.Fprintf(a.Out, "CaseFileID: %s\n", result.CaseFileID)
+	fmt.Fprintln(a.Out)
+
+	fmt.Fprintln(a.Out, "Reindex")
+	fmt.Fprintf(a.Out, "Scanned: %d\n", result.ReindexResult.Scanned)
+	fmt.Fprintf(a.Out, "Reindexed: %d\n", result.ReindexResult.Reindexed)
+	fmt.Fprintf(a.Out, "Skipped: %d\n", result.ReindexResult.Skipped)
+	fmt.Fprintf(a.Out, "  Missing file: %d\n", result.ReindexResult.SkippedMissingFile)
+	fmt.Fprintf(a.Out, "  Already indexed: %d\n", result.ReindexResult.SkippedAlreadyIndexed)
+	fmt.Fprintf(a.Out, "  Unsupported: %d\n", result.ReindexResult.SkippedUnsupported)
+	fmt.Fprintf(a.Out, "  Empty content: %d\n", result.ReindexResult.SkippedEmptyContent)
+	fmt.Fprintf(a.Out, "Errors: %d\n", result.ReindexResult.Errors)
+	fmt.Fprintln(a.Out)
+
+	fmt.Fprintln(a.Out, "Metadata")
+	fmt.Fprintf(a.Out, "Scanned: %d\n", result.MetadataResult.Scanned)
+	fmt.Fprintf(a.Out, "Analyzed: %d\n", result.MetadataResult.Analyzed)
+	fmt.Fprintf(a.Out, "Skipped: %d\n", result.MetadataResult.Skipped)
+	fmt.Fprintf(a.Out, "  No extracted text: %d\n", result.MetadataResult.SkippedNoExtractedText)
+	fmt.Fprintf(a.Out, "Errors: %d\n", result.MetadataResult.Errors)
+	fmt.Fprintln(a.Out)
+
+	fmt.Fprintln(a.Out, "Events")
+	if strings.TrimSpace(result.EventsResult.CalendarScope) != "" {
+		fmt.Fprintf(a.Out, "Calendar scope: %s\n", result.EventsResult.CalendarScope)
+	}
+	if result.EventsResult.AugustNonBusiness != nil {
+		fmt.Fprintf(a.Out, "August non-business: %v\n", *result.EventsResult.AugustNonBusiness)
+	}
+	fmt.Fprintf(a.Out, "Scanned: %d\n", result.EventsResult.Scanned)
+	fmt.Fprintf(a.Out, "Analyzed: %d\n", result.EventsResult.Analyzed)
+	fmt.Fprintf(a.Out, "Skipped: %d\n", result.EventsResult.Skipped)
+	fmt.Fprintf(a.Out, "  No extracted text: %d\n", result.EventsResult.SkippedNoExtractedText)
+	fmt.Fprintf(a.Out, "Errors: %d\n", result.EventsResult.Errors)
+	fmt.Fprintln(a.Out)
+
+	fmt.Fprintln(a.Out, "Health summary")
+	fmt.Fprintf(a.Out, "Needs attention: %v\n", result.NeedsAttention)
+	fmt.Fprintf(a.Out, "Top alert: %s\n", result.TopAlert)
+
+	return nil
+}
+
+func (a App) runCaseAudit(ctx context.Context, args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf(`usage: case-audit "<caseFileID>"`)
+	}
+
+	result, err := a.AuditCaseFile.Execute(ctx, casefileapp.AuditCaseFileInput{
+		CaseFileID: args[0],
+	})
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintln(a.Out, "Case file audit")
+	fmt.Fprintf(a.Out, "CaseFileID: %s\n", result.CaseFileID)
+	fmt.Fprintln(a.Out)
+
+	fmt.Fprintln(a.Out, "Verification")
+	fmt.Fprintf(a.Out, "Total: %d\n", result.VerifyResult.Total)
+	fmt.Fprintf(a.Out, "OK: %d\n", result.VerifyResult.OK)
+	fmt.Fprintf(a.Out, "Missing file: %d\n", result.VerifyResult.MissingFile)
+	fmt.Fprintf(a.Out, "Missing hash: %d\n", result.VerifyResult.MissingHash)
+	fmt.Fprintf(a.Out, "Missing text: %d\n", result.VerifyResult.MissingText)
+	fmt.Fprintf(a.Out, "Invalid mime: %d\n", result.VerifyResult.InvalidMime)
+	fmt.Fprintln(a.Out)
+
+	fmt.Fprintln(a.Out, "Semantic quality")
+	fmt.Fprintf(a.Out, "Unknown metadata: %d\n", result.DocumentsWithUnknownMetadata)
+	if result.DocumentsWithUnknownMetadata > 0 {
+		for _, name := range result.DocumentsWithUnknownMetadataList {
+			fmt.Fprintf(a.Out, "  - %s\n", name)
+		}
+	}
+
+	fmt.Fprintf(a.Out, "Without detected events: %d\n", result.DocumentsWithoutEvents)
+	if result.DocumentsWithoutEvents > 0 {
+		for _, name := range result.DocumentsWithoutEventsList {
+			fmt.Fprintf(a.Out, "  - %s\n", name)
+		}
+	}
+	fmt.Fprintln(a.Out)
+
+	fmt.Fprintln(a.Out, "Audit summary")
+	fmt.Fprintf(a.Out, "Healthy: %v\n", result.IsHealthy)
+	fmt.Fprintf(a.Out, "Top issue: %s\n", result.TopIssue)
+	fmt.Fprintln(a.Out)
+
+	fmt.Fprintln(a.Out, "Recommended actions")
+	for _, action := range result.RecommendedActions {
+		fmt.Fprintf(a.Out, "- %s\n", action)
+	}
 
 	return nil
 }

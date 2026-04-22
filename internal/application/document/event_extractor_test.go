@@ -13,8 +13,7 @@ func TestExtractDocumentEvents_DetectsMultipleEventTypes(t *testing.T) {
 	Se concede plazo hasta el 01/04/2026 para presentar alegaciones.
 	`
 
-	got := extractDocumentEvents(content)
-
+	got := extractDocumentEvents(content, DefaultEventComputationConfig())
 	if len(got) != 5 {
 		t.Fatalf("expected 5 events, got %d", len(got))
 	}
@@ -43,8 +42,7 @@ func TestExtractDocumentEvents_DeduplicatesSameLineEvent(t *testing.T) {
 	Se señala juicio para el día 10/05/2026.
 	`
 
-	got := extractDocumentEvents(content)
-
+	got := extractDocumentEvents(content, DefaultEventComputationConfig())
 	if len(got) != 1 {
 		t.Fatalf("expected 1 deduplicated event, got %d", len(got))
 	}
@@ -67,8 +65,7 @@ func TestExtractDocumentEvents_IgnoresLinesWithoutRecognizedEventType(t *testing
 	Este documento menciona la fecha 10/05/2026 pero no contiene vocabulario procesal relevante.
 	`
 
-	got := extractDocumentEvents(content)
-
+	got := extractDocumentEvents(content, DefaultEventComputationConfig())
 	if len(got) != 0 {
 		t.Fatalf("expected 0 events, got %d", len(got))
 	}
@@ -79,8 +76,7 @@ func TestExtractDocumentEvents_DetectsFilingEvent(t *testing.T) {
 	La presentación de demanda deberá realizarse antes del 18/04/2026.
 	`
 
-	got := extractDocumentEvents(content)
-
+	got := extractDocumentEvents(content, DefaultEventComputationConfig())
 	if len(got) != 1 {
 		t.Fatalf("expected 1 event, got %d", len(got))
 	}

@@ -21,21 +21,40 @@ type AnalyzeAllDocumentEventsResult struct {
 	Errors   int
 
 	SkippedNoExtractedText int
+
+	CaseFileID        string
+	CalendarScope     string
+	AugustNonBusiness *bool
 }
 
 type AnalyzeAllDocumentEvents struct {
 	Documents        ports.DocumentRepository
 	DocumentContents ports.DocumentContentRepository
+	CaseFiles        ports.CaseFileRepository
 	AnalyzeOne       AnalyzeDocumentEvents
 }
 
 func (uc AnalyzeAllDocumentEvents) Execute(ctx context.Context, input AnalyzeAllDocumentEventsInput) (AnalyzeAllDocumentEventsResult, error) {
 	var docs []document.Document
+	result := AnalyzeAllDocumentEventsResult{}
 
 	if strings.TrimSpace(input.CaseFileID) != "" {
 		caseFileID := shared.NewID(strings.TrimSpace(input.CaseFileID))
 		if caseFileID == "" {
 			return AnalyzeAllDocumentEventsResult{}, shared.ErrInvalidAssociation
+		}
+
+		result.CaseFileID = caseFileID.String()
+
+		if uc.CaseFiles != nil {
+			cf, err := uc.CaseFiles.GetByID(ctx, caseFileID)
+			if err != nil {
+				return AnalyzeAllDocumentEventsResult{}, err
+			}
+
+			result.CalendarScope = cf.CalendarScope
+			v := cf.AugustNonBusiness
+			result.AugustNonBusiness = &v
 		}
 
 		caseDocs, err := uc.Documents.ListByCaseFileID(ctx, caseFileID)
@@ -51,9 +70,7 @@ func (uc AnalyzeAllDocumentEvents) Execute(ctx context.Context, input AnalyzeAll
 		docs = allDocs
 	}
 
-	result := AnalyzeAllDocumentEventsResult{
-		Scanned: len(docs),
-	}
+	result.Scanned = len(docs)
 
 	for _, doc := range docs {
 		content, err := uc.DocumentContents.GetByDocumentID(ctx, doc.ID.String())

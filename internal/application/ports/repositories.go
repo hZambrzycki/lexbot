@@ -18,6 +18,7 @@ type ClientRepository interface {
 
 type CaseFileRepository interface {
 	Save(ctx context.Context, cf casefile.CaseFile) error
+	Update(ctx context.Context, cf casefile.CaseFile) error
 	GetByID(ctx context.Context, id shared.ID) (casefile.CaseFile, error)
 	List(ctx context.Context) ([]casefile.CaseFile, error)
 	ListByClientID(ctx context.Context, clientID shared.ID) ([]casefile.CaseFile, error)

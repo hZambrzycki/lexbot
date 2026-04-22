@@ -8,8 +8,7 @@ func TestExtractDocumentEvents_DetectsRelativeDeadlineInBusinessDays(t *testing.
 	Dentro de 3 días hábiles deberá aportar la documentación.
 	`
 
-	got := extractDocumentEvents(content)
-
+	got := extractDocumentEvents(content, DefaultEventComputationConfig())
 	assertHasExtractedEvent(t, got, "notification", "2026-04-13")
 	assertHasExtractedEvent(t, got, "deadline", "2026-04-16")
 
@@ -31,8 +30,7 @@ func TestExtractDocumentEvents_DetectsRelativeDeadlineInNaturalDaysWhenExplicit(
 	Dentro de 3 días naturales deberá aportar la documentación.
 	`
 
-	got := extractDocumentEvents(content)
-
+	got := extractDocumentEvents(content, DefaultEventComputationConfig())
 	assertHasExtractedEvent(t, got, "deadline", "2026-04-14")
 
 	deadline := mustFindExtractedEvent(t, got, "deadline", "2026-04-14")
@@ -53,8 +51,7 @@ func TestExtractDocumentEvents_DetectsBusinessDaysCountingFromNextDay(t *testing
 	Dentro de 3 días hábiles a contar desde el día siguiente deberá aportar la documentación.
 	`
 
-	got := extractDocumentEvents(content)
-
+	got := extractDocumentEvents(content, DefaultEventComputationConfig())
 	assertHasExtractedEvent(t, got, "notification", "2026-04-13")
 	assertHasExtractedEvent(t, got, "deadline", "2026-04-17")
 
@@ -76,8 +73,7 @@ func TestExtractDocumentEvents_DetectsNaturalDaysCountingFromNextDay(t *testing.
 	Dentro de 3 días naturales a contar desde el día siguiente deberá aportar la documentación.
 	`
 
-	got := extractDocumentEvents(content)
-
+	got := extractDocumentEvents(content, DefaultEventComputationConfig())
 	assertHasExtractedEvent(t, got, "notification", "2026-04-11")
 	assertHasExtractedEvent(t, got, "deadline", "2026-04-15")
 
@@ -99,8 +95,7 @@ func TestExtractDocumentEvents_DetectsBusinessDaysFromNextBusinessDay(t *testing
 	Se concede plazo de 3 días hábiles desde el siguiente día hábil para aportar la documentación.
 	`
 
-	got := extractDocumentEvents(content)
-
+	got := extractDocumentEvents(content, DefaultEventComputationConfig())
 	assertHasExtractedEvent(t, got, "notification", "2026-04-13")
 	assertHasExtractedEvent(t, got, "deadline", "2026-04-17")
 
@@ -122,8 +117,7 @@ func TestExtractDocumentEvents_DetectsBusinessDaysFromNextBusinessDay_Apartir(t 
 	Se concede plazo de 3 días hábiles a partir del siguiente día hábil para aportar la documentación.
 	`
 
-	got := extractDocumentEvents(content)
-
+	got := extractDocumentEvents(content, DefaultEventComputationConfig())
 	assertHasExtractedEvent(t, got, "notification", "2026-04-13")
 	assertHasExtractedEvent(t, got, "deadline", "2026-04-17")
 
@@ -145,8 +139,7 @@ func TestExtractDocumentEvents_TriggerPreservesFullNextBusinessDayPhrase(t *test
 	Se concede plazo de 3 días hábiles desde el siguiente día hábil para aportar la documentación.
 	`
 
-	got := extractDocumentEvents(content)
-
+	got := extractDocumentEvents(content, DefaultEventComputationConfig())
 	deadline := mustFindExtractedEvent(t, got, "deadline", "2026-04-17")
 
 	want := "plazo de 3 dias habiles desde el siguiente dia habil"
@@ -161,8 +154,7 @@ func TestExtractDocumentEvents_BusinessDaysSkipConfiguredHoliday(t *testing.T) {
 	Dentro de 1 día hábil deberá aportar la documentación.
 	`
 
-	got := extractDocumentEvents(content)
-
+	got := extractDocumentEvents(content, DefaultEventComputationConfig())
 	assertHasExtractedEvent(t, got, "notification", "2026-04-02")
 	assertHasExtractedEvent(t, got, "deadline", "2026-04-06")
 
@@ -184,8 +176,7 @@ func TestExtractDocumentEvents_DetectsSingleBusinessDay(t *testing.T) {
 	Dentro de 1 día hábil deberá aportar la documentación.
 	`
 
-	got := extractDocumentEvents(content)
-
+	got := extractDocumentEvents(content, DefaultEventComputationConfig())
 	assertHasExtractedEvent(t, got, "notification", "2026-04-02")
 	assertHasExtractedEvent(t, got, "deadline", "2026-04-06")
 }
@@ -196,8 +187,7 @@ func TestExtractDocumentEvents_BusinessDaysUseMadridScope(t *testing.T) {
 	Dentro de 1 día hábil deberá aportar la documentación.
 	`
 
-	got := extractDocumentEvents(content)
-
+	got := extractDocumentEvents(content, DefaultEventComputationConfig())
 	assertHasExtractedEvent(t, got, "notification", "2026-05-01")
 	assertHasExtractedEvent(t, got, "deadline", "2026-05-04")
 
@@ -219,8 +209,7 @@ func TestExtractDocumentEvents_BusinessDaysSkipAugustWhenProceduralRuleEnabled(t
 	Dentro de 1 día hábil deberá aportar la documentación.
 	`
 
-	got := extractDocumentEvents(content)
-
+	got := extractDocumentEvents(content, DefaultEventComputationConfig())
 	assertHasExtractedEvent(t, got, "notification", "2026-07-31")
 	assertHasExtractedEvent(t, got, "deadline", "2026-09-01")
 
@@ -234,4 +223,44 @@ func TestExtractDocumentEvents_BusinessDaysSkipAugustWhenProceduralRuleEnabled(t
 		addExtraDay:    false,
 		requireTrigger: true,
 	})
+}
+
+func TestExtractDocumentEvents_BusinessDays_CrossYearIncludesNextYearHolidays(t *testing.T) {
+	content := `
+Notifíquese la resolución el 30/12/2026.
+Dentro de 5 días hábiles deberá aportar la documentación.
+`
+
+	events := extractDocumentEvents(content, DefaultEventComputationConfig())
+	if len(events) != 2 {
+		t.Fatalf("expected 2 events, got %d", len(events))
+	}
+
+	var deadline *extractedEventCandidate
+	for i := range events {
+		if events[i].EventType == "deadline" {
+			deadline = &events[i]
+			break
+		}
+	}
+
+	if deadline == nil {
+		t.Fatal("expected to find deadline event")
+	}
+
+	if deadline.DateKind != extractedDateKindRelative {
+		t.Fatalf("expected relative date kind, got %s", deadline.DateKind)
+	}
+
+	if deadline.AnchorDate != "2026-12-30" {
+		t.Fatalf("expected anchor date 2026-12-30, got %s", deadline.AnchorDate)
+	}
+
+	if !deadline.IsBusinessDays {
+		t.Fatal("expected business days deadline")
+	}
+
+	if deadline.EventDate != "2027-01-08" {
+		t.Fatalf("expected deadline date 2027-01-08, got %s", deadline.EventDate)
+	}
 }

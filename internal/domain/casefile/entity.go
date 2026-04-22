@@ -1,9 +1,9 @@
 package casefile
 
 import (
-	"strings"
-
+	domaincalendar "lexbox/internal/domain/calendar"
 	"lexbox/internal/domain/shared"
+	"strings"
 )
 
 type Status string
@@ -44,13 +44,15 @@ func IsValidType(t Type) bool {
 }
 
 type CaseFile struct {
-	ID          shared.ID
-	ClientID    shared.ID
-	Reference   string
-	Title       string
-	Type        Type
-	Status      Status
-	Description string
+	ID                shared.ID
+	ClientID          shared.ID
+	Reference         string
+	Title             string
+	Type              Type
+	Status            Status
+	Description       string
+	CalendarScope     string
+	AugustNonBusiness bool
 
 	CreatedAt shared.Timestamp
 	UpdatedAt shared.Timestamp
@@ -73,13 +75,15 @@ func NewCaseFile(id shared.ID, clientID shared.ID, title string) (CaseFile, erro
 	now := shared.Now()
 
 	return CaseFile{
-		ID:        id,
-		ClientID:  clientID,
-		Title:     title,
-		Type:      TypeOtros,
-		Status:    StatusOpen,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:                id,
+		ClientID:          clientID,
+		Title:             title,
+		Type:              TypeOtros,
+		Status:            StatusOpen,
+		CalendarScope:     domaincalendar.ScopeMadrid,
+		AugustNonBusiness: true,
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}, nil
 }
 
@@ -126,4 +130,13 @@ func (cf *CaseFile) Rename(title string) error {
 
 func (cf *CaseFile) touch() {
 	cf.UpdatedAt = shared.Now()
+}
+
+func (cf *CaseFile) SetComputationConfig(calendarScope string, augustNonBusiness bool) {
+	calendarScope = strings.TrimSpace(calendarScope)
+	if calendarScope != "" {
+		cf.CalendarScope = calendarScope
+	}
+	cf.AugustNonBusiness = augustNonBusiness
+	cf.touch()
 }

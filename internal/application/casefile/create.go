@@ -2,21 +2,22 @@ package casefileapp
 
 import (
 	"context"
-	"strings"
-
 	"lexbox/internal/application/ports"
+	domaincalendar "lexbox/internal/domain/calendar"
 	"lexbox/internal/domain/casefile"
 	"lexbox/internal/domain/shared"
+	"strings"
 )
 
 type CreateCaseFileInput struct {
-	ClientID    string
-	Reference   string
-	Title       string
-	Type        casefile.Type
-	Description string
+	ClientID          string
+	Reference         string
+	Title             string
+	Type              casefile.Type
+	Description       string
+	CalendarScope     string
+	AugustNonBusiness *bool
 }
-
 type CreateCaseFile struct {
 	CaseFiles ports.CaseFileRepository
 	Clients   ports.ClientRepository
@@ -53,6 +54,19 @@ func (uc CreateCaseFile) Execute(ctx context.Context, in CreateCaseFileInput) (c
 	cf.Reference = reference
 	cf.Description = description
 
+	if strings.TrimSpace(in.CalendarScope) != "" {
+		scope := strings.TrimSpace(in.CalendarScope)
+		switch scope {
+		case domaincalendar.ScopeMadrid, domaincalendar.ScopeState:
+			cf.CalendarScope = scope
+		default:
+			return casefile.CaseFile{}, shared.ErrInvalidState
+		}
+	}
+
+	if in.AugustNonBusiness != nil {
+		cf.AugustNonBusiness = *in.AugustNonBusiness
+	}
 	// Validación de tipo
 	if in.Type != "" {
 		if !casefile.IsValidType(in.Type) {
