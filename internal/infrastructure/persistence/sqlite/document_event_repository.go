@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"strings"
 
 	"lexbox/internal/application/querymodels"
 	"lexbox/internal/domain/document"
@@ -44,9 +45,13 @@ func (r *DocumentEventRepository) ReplaceByDocumentID(ctx context.Context, docum
 			add_extra_day,
 			calendar_scope,
 			trigger_text,
-			computation
+			computation,
+			review_status,
+			reviewed_at,
+			resolved_at,
+			resolution_note
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	for _, event := range events {
@@ -78,6 +83,10 @@ func (r *DocumentEventRepository) ReplaceByDocumentID(ctx context.Context, docum
 			emptyDefault(event.CalendarScope, "madrid"),
 			nullIfBlank(event.TriggerText),
 			emptyDefault(event.Computation, ""),
+			emptyDefault(event.ReviewStatus, document.ReviewStatusPending),
+			emptyDefault(event.ReviewedAt, ""),
+			emptyDefault(event.ResolvedAt, ""),
+			emptyDefault(event.ResolutionNote, ""),
 		)
 		if err != nil {
 			return err
@@ -85,6 +94,137 @@ func (r *DocumentEventRepository) ReplaceByDocumentID(ctx context.Context, docum
 	}
 
 	return tx.Commit()
+}
+
+func (r *DocumentEventRepository) GetByID(ctx context.Context, eventID shared.ID) (document.Event, error) {
+	const query = `
+		SELECT
+			id,
+			document_id,
+			event_type,
+			event_date,
+			source_text,
+			created_at,
+			anchor_date,
+			date_kind,
+			anchor_source,
+			relative_days,
+			is_business_days,
+			add_extra_day,
+			calendar_scope,
+			trigger_text,
+			computation,
+			review_status,
+			reviewed_at,
+			resolved_at,
+			resolution_note
+		FROM document_events
+		WHERE id = ?
+	`
+
+	var (
+		id             string
+		rawDocID       string
+		eventType      string
+		eventDate      string
+		sourceText     string
+		createdAt      string
+		anchorDate     sql.NullString
+		dateKind       sql.NullString
+		anchorSource   sql.NullString
+		relativeDays   int
+		isBusinessDays int
+		addExtraDay    int
+		calendarScope  string
+		triggerText    sql.NullString
+		computation    string
+		reviewStatus   string
+		reviewedAt     string
+		resolvedAt     string
+		resolutionNote string
+	)
+
+	err := r.db.QueryRowContext(ctx, query, eventID.String()).Scan(
+		&id,
+		&rawDocID,
+		&eventType,
+		&eventDate,
+		&sourceText,
+		&createdAt,
+		&anchorDate,
+		&dateKind,
+		&anchorSource,
+		&relativeDays,
+		&isBusinessDays,
+		&addExtraDay,
+		&calendarScope,
+		&triggerText,
+		&computation,
+		&reviewStatus,
+		&reviewedAt,
+		&resolvedAt,
+		&resolutionNote,
+	)
+	if err != nil {
+		return document.Event{}, err
+	}
+
+	return document.Event{
+		ID:             shared.NewID(id),
+		DocumentID:     shared.NewID(rawDocID),
+		EventType:      eventType,
+		EventDate:      eventDate,
+		SourceText:     sourceText,
+		CreatedAt:      createdAt,
+		AnchorDate:     anchorDate.String,
+		DateKind:       dateKind.String,
+		AnchorSource:   anchorSource.String,
+		RelativeDays:   relativeDays,
+		IsBusinessDays: isBusinessDays == 1,
+		AddExtraDay:    addExtraDay == 1,
+		CalendarScope:  calendarScope,
+		TriggerText:    triggerText.String,
+		Computation:    computation,
+		ReviewStatus:   reviewStatus,
+		ReviewedAt:     reviewedAt,
+		ResolvedAt:     resolvedAt,
+		ResolutionNote: resolutionNote,
+	}, nil
+}
+
+func (r *DocumentEventRepository) UpdateReviewState(ctx context.Context, eventID shared.ID, reviewStatus, reviewedAt, resolvedAt, resolutionNote string) error {
+	const query = `
+		UPDATE document_events
+		SET
+			review_status = ?,
+			reviewed_at = ?,
+			resolved_at = ?,
+			resolution_note = ?
+		WHERE id = ?
+	`
+
+	result, err := r.db.ExecContext(
+		ctx,
+		query,
+		reviewStatus,
+		emptyDefault(reviewedAt, ""),
+		emptyDefault(resolvedAt, ""),
+		emptyDefault(resolutionNote, ""),
+		eventID.String(),
+	)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
 }
 
 func (r *DocumentEventRepository) ListByDocumentID(ctx context.Context, documentID shared.ID) ([]document.Event, error) {
@@ -104,7 +244,11 @@ func (r *DocumentEventRepository) ListByDocumentID(ctx context.Context, document
 			add_extra_day,
 			calendar_scope,
 			trigger_text,
-			computation
+			computation,
+			review_status,
+			reviewed_at,
+			resolved_at,
+			resolution_note
 		FROM document_events
 		WHERE document_id = ?
 		ORDER BY event_date ASC, id ASC
@@ -134,6 +278,10 @@ func (r *DocumentEventRepository) ListByDocumentID(ctx context.Context, document
 			calendarScope  string
 			triggerText    sql.NullString
 			computation    string
+			reviewStatus   string
+			reviewedAt     string
+			resolvedAt     string
+			resolutionNote string
 		)
 
 		if err := rows.Scan(
@@ -152,6 +300,10 @@ func (r *DocumentEventRepository) ListByDocumentID(ctx context.Context, document
 			&calendarScope,
 			&triggerText,
 			&computation,
+			&reviewStatus,
+			&reviewedAt,
+			&resolvedAt,
+			&resolutionNote,
 		); err != nil {
 			return nil, err
 		}
@@ -172,6 +324,10 @@ func (r *DocumentEventRepository) ListByDocumentID(ctx context.Context, document
 			CalendarScope:  calendarScope,
 			TriggerText:    triggerText.String,
 			Computation:    computation,
+			ReviewStatus:   reviewStatus,
+			ReviewedAt:     reviewedAt,
+			ResolvedAt:     resolvedAt,
+			ResolutionNote: resolutionNote,
 		})
 	}
 
@@ -182,8 +338,8 @@ func (r *DocumentEventRepository) ListByDocumentID(ctx context.Context, document
 	return events, nil
 }
 
-func (r *DocumentEventRepository) ListByCaseFileID(ctx context.Context, caseFileID shared.ID) ([]querymodels.CaseFileEventResult, error) {
-	const query = `
+func (r *DocumentEventRepository) ListByCaseFileID(ctx context.Context, caseFileID shared.ID, reviewStatus string) ([]querymodels.CaseFileEventResult, error) {
+	query := `
 		SELECT
 			de.id,
 			de.document_id,
@@ -199,14 +355,26 @@ func (r *DocumentEventRepository) ListByCaseFileID(ctx context.Context, caseFile
 			COALESCE(de.add_extra_day, 0),
 			COALESCE(de.calendar_scope, 'madrid'),
 			COALESCE(de.trigger_text, ''),
-			COALESCE(de.computation, '')
+			COALESCE(de.computation, ''),
+			COALESCE(de.review_status, 'pending'),
+			COALESCE(de.reviewed_at, ''),
+			COALESCE(de.resolved_at, ''),
+			COALESCE(de.resolution_note, '')
 		FROM document_events de
 		INNER JOIN documents d ON d.id = de.document_id
 		WHERE d.case_file_id = ?
-		ORDER BY de.event_date ASC, de.id ASC
 	`
 
-	rows, err := r.db.QueryContext(ctx, query, caseFileID.String())
+	args := []any{caseFileID.String()}
+
+	if strings.TrimSpace(reviewStatus) != "" {
+		query += ` AND de.review_status = ?`
+		args = append(args, strings.TrimSpace(reviewStatus))
+	}
+
+	query += ` ORDER BY de.event_date ASC, de.id ASC`
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -236,6 +404,10 @@ func (r *DocumentEventRepository) ListByCaseFileID(ctx context.Context, caseFile
 			&item.CalendarScope,
 			&item.TriggerText,
 			&item.Computation,
+			&item.ReviewStatus,
+			&item.ReviewedAt,
+			&item.ResolvedAt,
+			&item.ResolutionNote,
 		); err != nil {
 			return nil, err
 		}
@@ -252,7 +424,7 @@ func (r *DocumentEventRepository) ListByCaseFileID(ctx context.Context, caseFile
 	return results, nil
 }
 
-func (r *DocumentEventRepository) ListUpcoming(ctx context.Context, fromDate string, caseFileID shared.ID, eventType string) ([]querymodels.CaseFileEventResult, error) {
+func (r *DocumentEventRepository) ListUpcoming(ctx context.Context, fromDate string, caseFileID shared.ID, eventType string, reviewStatus string) ([]querymodels.CaseFileEventResult, error) {
 	query := `
 		SELECT
 			de.id,
@@ -269,7 +441,11 @@ func (r *DocumentEventRepository) ListUpcoming(ctx context.Context, fromDate str
 			COALESCE(de.add_extra_day, 0),
 			COALESCE(de.calendar_scope, 'madrid'),
 			COALESCE(de.trigger_text, ''),
-			COALESCE(de.computation, '')
+			COALESCE(de.computation, ''),
+			COALESCE(de.review_status, 'pending'),
+			COALESCE(de.reviewed_at, ''),
+			COALESCE(de.resolved_at, ''),
+			COALESCE(de.resolution_note, '')
 		FROM document_events de
 		INNER JOIN documents d ON d.id = de.document_id
 		WHERE 1=1
@@ -285,6 +461,11 @@ func (r *DocumentEventRepository) ListUpcoming(ctx context.Context, fromDate str
 	if eventType != "" {
 		query += ` AND de.event_type = ?`
 		args = append(args, eventType)
+	}
+
+	if strings.TrimSpace(reviewStatus) != "" {
+		query += ` AND de.review_status = ?`
+		args = append(args, strings.TrimSpace(reviewStatus))
 	}
 
 	if fromDate != "" {
@@ -324,6 +505,10 @@ func (r *DocumentEventRepository) ListUpcoming(ctx context.Context, fromDate str
 			&item.CalendarScope,
 			&item.TriggerText,
 			&item.Computation,
+			&item.ReviewStatus,
+			&item.ReviewedAt,
+			&item.ResolvedAt,
+			&item.ResolutionNote,
 		); err != nil {
 			return nil, err
 		}

@@ -32,7 +32,7 @@ func TestAnalyzeDocumentEvents_UsesCaseFileComputationConfig(t *testing.T) {
 	documentContentRepo := reposqlite.NewDocumentContentRepository(db)
 	eventRepo := reposqlite.NewDocumentEventRepository(db)
 	ids := idgen.NewIDGenerator()
-	// Cliente
+
 	clientID := ids.NewID()
 	clientEntity, err := domainclient.NewClient(clientID, "Cliente Test")
 	if err != nil {
@@ -43,7 +43,6 @@ func TestAnalyzeDocumentEvents_UsesCaseFileComputationConfig(t *testing.T) {
 		t.Fatalf("ClientRepository.Save: %v", err)
 	}
 
-	// Expediente con config explícita
 	cf, err := domaincasefile.NewCaseFile(ids.NewID(), clientID, "Expediente prueba")
 	if err != nil {
 		t.Fatalf("casefile.NewCaseFile: %v", err)
@@ -58,7 +57,6 @@ func TestAnalyzeDocumentEvents_UsesCaseFileComputationConfig(t *testing.T) {
 		t.Fatalf("CaseFileRepository.Save: %v", err)
 	}
 
-	// Documento asociado al expediente
 	doc, err := domaindocument.NewDocument(
 		ids.NewID(),
 		cf.ID,
@@ -154,7 +152,6 @@ func TestAnalyzeDocumentEvents_UsesCaseFileConfig_StateScope_And_AugustBusiness(
 	eventRepo := reposqlite.NewDocumentEventRepository(db)
 	ids := idgen.NewIDGenerator()
 
-	// Cliente
 	clientID := ids.NewID()
 	clientEntity, err := domainclient.NewClient(clientID, "Cliente Test")
 	if err != nil {
@@ -165,7 +162,6 @@ func TestAnalyzeDocumentEvents_UsesCaseFileConfig_StateScope_And_AugustBusiness(
 		t.Fatalf("ClientRepository.Save: %v", err)
 	}
 
-	// Expediente con config explícita distinta del default
 	cf, err := domaincasefile.NewCaseFile(ids.NewID(), clientID, "Expediente state agosto hábil")
 	if err != nil {
 		t.Fatalf("casefile.NewCaseFile: %v", err)
@@ -180,7 +176,6 @@ func TestAnalyzeDocumentEvents_UsesCaseFileConfig_StateScope_And_AugustBusiness(
 		t.Fatalf("CaseFileRepository.Save: %v", err)
 	}
 
-	// Documento asociado
 	doc, err := domaindocument.NewDocument(
 		ids.NewID(),
 		cf.ID,

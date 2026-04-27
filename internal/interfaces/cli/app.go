@@ -50,6 +50,9 @@ type App struct {
 	ListEventsByCaseFile       documentapp.ListEventsByCaseFile
 	ListUpcomingEvents         documentapp.ListUpcomingEvents
 	ExportUpcomingEventsICS    documentapp.ExportUpcomingEventsICS
+	MarkEventReviewed          documentapp.MarkEventReviewed
+	MarkEventResolved          documentapp.MarkEventResolved
+	ReopenEvent                documentapp.ReopenEvent
 	FixCaseFile                casefileapp.FixCaseFile
 	AuditCaseFile              casefileapp.AuditCaseFile
 }
@@ -128,6 +131,12 @@ func (a App) Run(ctx context.Context, args []string) error {
 		return a.runMimeNormalize(ctx)
 	case "document-events":
 		return a.runListDocumentEvents(ctx, args[1:])
+	case "event-review":
+		return a.runMarkEventReviewed(ctx, args[1:])
+	case "event-resolve":
+		return a.runMarkEventResolved(ctx, args[1:])
+	case "event-reopen":
+		return a.runReopenEvent(ctx, args[1:])
 	case "events-list":
 		return a.runListEventsByCaseFile(ctx, args[1:])
 	case "events-upcoming":
@@ -184,14 +193,11 @@ func (a App) printHelp() {
 	fmt.Fprintln(a.Out, "  storage-clean-orphans")
 	fmt.Fprintln(a.Out, "  mime-normalize")
 	fmt.Fprintln(a.Out, `  document-events "<documentID>"`)
-	fmt.Fprintln(a.Out, `  events-list --case "<caseFileID>"`)
-	fmt.Fprintln(a.Out, `  events-upcoming`)
-	fmt.Fprintln(a.Out, `  events-upcoming --case "<caseFileID>"`)
-	fmt.Fprintln(a.Out, `  events-upcoming --type "<eventType>"`)
-	fmt.Fprintln(a.Out, `  events-upcoming --case "<caseFileID>" --type "<eventType>"`)
-	fmt.Fprintln(a.Out, `  events-upcoming --relative-only`)
-	fmt.Fprintln(a.Out, `  events-upcoming --verbose`)
-	fmt.Fprintln(a.Out, `  events-upcoming --case "<caseFileID>" --relative-only --verbose`)
+	fmt.Fprintln(a.Out, `  event-review "<eventID>"`)
+	fmt.Fprintln(a.Out, `  event-resolve "<eventID>" "<resolutionNote>"`)
+	fmt.Fprintln(a.Out, `  event-reopen "<eventID>"`)
+	fmt.Fprintln(a.Out, `  events-list --case "<caseFileID>" [--review-status "<pending|reviewed|resolved>"]`)
+	fmt.Fprintln(a.Out, `  events-upcoming [--case "<caseFileID>"] [--type "<eventType>"] [--review-status "<pending|reviewed|resolved>"] [--relative-only] [--verbose]`)
 	fmt.Fprintln(a.Out, `  events-export-ics`)
 	fmt.Fprintln(a.Out, `  events-export-ics --case "<caseFileID>"`)
 	fmt.Fprintln(a.Out, `  events-export-ics --type "<eventType>"`)
@@ -896,8 +902,26 @@ func (a App) runGetDocument(ctx context.Context, args []string) error {
 	if result.HasEvents {
 		fmt.Fprintf(a.Out, "Events (%d):\n", len(result.Events))
 		for i, e := range result.Events {
-			fmt.Fprintf(a.Out, "  %d. type=%s | date=%s\n", i+1, e.EventType, e.EventDate)
+			fmt.Fprintf(
+				a.Out,
+				"  %d. id=%s | type=%s | date=%s | review=%s\n",
+				i+1,
+				e.ID,
+				e.EventType,
+				e.EventDate,
+				e.ReviewStatus,
+			)
 			fmt.Fprintf(a.Out, "     source=%s\n", e.SourceText)
+
+			if strings.TrimSpace(e.ReviewedAt) != "" {
+				fmt.Fprintf(a.Out, "     reviewed_at=%s\n", e.ReviewedAt)
+			}
+			if strings.TrimSpace(e.ResolvedAt) != "" {
+				fmt.Fprintf(a.Out, "     resolved_at=%s\n", e.ResolvedAt)
+			}
+			if strings.TrimSpace(e.ResolutionNote) != "" {
+				fmt.Fprintf(a.Out, "     resolution_note=%s\n", e.ResolutionNote)
+			}
 		}
 	} else {
 		fmt.Fprintln(a.Out, "Events (0):")
@@ -1352,14 +1376,25 @@ func (a App) runListDocumentEvents(ctx context.Context, args []string) error {
 	for i, e := range events {
 		fmt.Fprintf(
 			a.Out,
-			"  %d. type=%s | date=%s | kind=%s\n",
+			"  %d. id=%s | type=%s | date=%s | kind=%s | review=%s\n",
 			i+1,
+			e.ID,
 			e.EventType,
 			e.EventDate,
 			e.DateKind,
+			e.ReviewStatus,
 		)
 		fmt.Fprintf(a.Out, "     source=%s\n", e.SourceText)
 
+		if strings.TrimSpace(e.ReviewedAt) != "" {
+			fmt.Fprintf(a.Out, "     reviewed_at=%s\n", e.ReviewedAt)
+		}
+		if strings.TrimSpace(e.ResolvedAt) != "" {
+			fmt.Fprintf(a.Out, "     resolved_at=%s\n", e.ResolvedAt)
+		}
+		if strings.TrimSpace(e.ResolutionNote) != "" {
+			fmt.Fprintf(a.Out, "     resolution_note=%s\n", e.ResolutionNote)
+		}
 		if strings.TrimSpace(e.AnchorDate) != "" {
 			fmt.Fprintf(a.Out, "     anchor_date=%s\n", e.AnchorDate)
 		}
@@ -1401,32 +1436,44 @@ func (a App) runListDocumentEvents(ctx context.Context, args []string) error {
 
 func (a App) runListEventsByCaseFile(ctx context.Context, args []string) error {
 	caseFileID := ""
+	reviewStatus := ""
 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--case":
 			if i+1 >= len(args) {
-				return fmt.Errorf(`usage: events-list --case "<caseFileID>"`)
+				return fmt.Errorf(`usage: events-list --case "<caseFileID>" [--review-status "<pending|reviewed|resolved>"]`)
 			}
 			caseFileID = strings.TrimSpace(args[i+1])
 			i++
+		case "--review-status":
+			if i+1 >= len(args) {
+				return fmt.Errorf(`usage: events-list --case "<caseFileID>" [--review-status "<pending|reviewed|resolved>"]`)
+			}
+			reviewStatus = strings.TrimSpace(strings.ToLower(args[i+1]))
+			i++
 		default:
-			return fmt.Errorf(`usage: events-list --case "<caseFileID>"`)
+			return fmt.Errorf(`usage: events-list --case "<caseFileID>" [--review-status "<pending|reviewed|resolved>"]`)
 		}
 	}
 
 	if caseFileID == "" {
-		return fmt.Errorf(`usage: events-list --case "<caseFileID>"`)
+		return fmt.Errorf(`usage: events-list --case "<caseFileID>" [--review-status "<pending|reviewed|resolved>"]`)
 	}
 
 	events, err := a.ListEventsByCaseFile.Execute(ctx, documentapp.ListEventsByCaseFileInput{
-		CaseFileID: caseFileID,
+		CaseFileID:   caseFileID,
+		ReviewStatus: reviewStatus,
 	})
 	if err != nil {
 		return err
 	}
 
-	fmt.Fprintf(a.Out, "Events for case file %s\n", caseFileID)
+	if reviewStatus != "" {
+		fmt.Fprintf(a.Out, "Events for case file %s (review=%s)\n", caseFileID, reviewStatus)
+	} else {
+		fmt.Fprintf(a.Out, "Events for case file %s\n", caseFileID)
+	}
 
 	if len(events) == 0 {
 		fmt.Fprintln(a.Out, "No events found")
@@ -1436,15 +1483,27 @@ func (a App) runListEventsByCaseFile(ctx context.Context, args []string) error {
 	for i, e := range events {
 		fmt.Fprintf(
 			a.Out,
-			"  %d. date=%s | type=%s | kind=%s | document=%s\n",
+			"  %d. id=%s | date=%s | type=%s | kind=%s | review=%s | document=%s\n",
 			i+1,
+			e.EventID,
 			e.EventDate,
 			e.EventType,
 			e.DateKind,
+			e.ReviewStatus,
 			e.OriginalName,
 		)
 		fmt.Fprintf(a.Out, "     document_id=%s\n", e.DocumentID)
 		fmt.Fprintf(a.Out, "     source=%s\n", e.SourceText)
+
+		if strings.TrimSpace(e.ReviewedAt) != "" {
+			fmt.Fprintf(a.Out, "     reviewed_at=%s\n", e.ReviewedAt)
+		}
+		if strings.TrimSpace(e.ResolvedAt) != "" {
+			fmt.Fprintf(a.Out, "     resolved_at=%s\n", e.ResolvedAt)
+		}
+		if strings.TrimSpace(e.ResolutionNote) != "" {
+			fmt.Fprintf(a.Out, "     resolution_note=%s\n", e.ResolutionNote)
+		}
 
 		if strings.TrimSpace(e.AnchorDate) != "" {
 			fmt.Fprintf(a.Out, "     anchor_date=%s\n", e.AnchorDate)
@@ -1488,6 +1547,7 @@ func (a App) runListEventsByCaseFile(ctx context.Context, args []string) error {
 func (a App) runListUpcomingEvents(ctx context.Context, args []string) error {
 	caseFileID := ""
 	eventType := ""
+	reviewStatus := ""
 	relativeOnly := false
 	verbose := false
 
@@ -1495,22 +1555,28 @@ func (a App) runListUpcomingEvents(ctx context.Context, args []string) error {
 		switch args[i] {
 		case "--case":
 			if i+1 >= len(args) {
-				return fmt.Errorf(`usage: events-upcoming [--case "<caseFileID>"] [--type "<eventType>"] [--relative-only] [--verbose]`)
+				return fmt.Errorf(`usage: events-upcoming [--case "<caseFileID>"] [--type "<eventType>"] [--review-status "<pending|reviewed|resolved>"] [--relative-only] [--verbose]`)
 			}
 			caseFileID = strings.TrimSpace(args[i+1])
 			i++
 		case "--type":
 			if i+1 >= len(args) {
-				return fmt.Errorf(`usage: events-upcoming [--case "<caseFileID>"] [--type "<eventType>"] [--relative-only] [--verbose]`)
+				return fmt.Errorf(`usage: events-upcoming [--case "<caseFileID>"] [--type "<eventType>"] [--review-status "<pending|reviewed|resolved>"] [--relative-only] [--verbose]`)
 			}
 			eventType = strings.TrimSpace(strings.ToLower(args[i+1]))
+			i++
+		case "--review-status":
+			if i+1 >= len(args) {
+				return fmt.Errorf(`usage: events-upcoming [--case "<caseFileID>"] [--type "<eventType>"] [--review-status "<pending|reviewed|resolved>"] [--relative-only] [--verbose]`)
+			}
+			reviewStatus = strings.TrimSpace(strings.ToLower(args[i+1]))
 			i++
 		case "--relative-only":
 			relativeOnly = true
 		case "--verbose":
 			verbose = true
 		default:
-			return fmt.Errorf(`usage: events-upcoming [--case "<caseFileID>"] [--type "<eventType>"] [--relative-only] [--verbose]`)
+			return fmt.Errorf(`usage: events-upcoming [--case "<caseFileID>"] [--type "<eventType>"] [--review-status "<pending|reviewed|resolved>"] [--relative-only] [--verbose]`)
 		}
 	}
 
@@ -1518,6 +1584,7 @@ func (a App) runListUpcomingEvents(ctx context.Context, args []string) error {
 		CaseFileID:   caseFileID,
 		EventType:    eventType,
 		RelativeOnly: relativeOnly,
+		ReviewStatus: reviewStatus,
 	})
 	if err != nil {
 		return err
@@ -1532,6 +1599,9 @@ func (a App) runListUpcomingEvents(ctx context.Context, args []string) error {
 		title = fmt.Sprintf("Upcoming events (type=%s)", eventType)
 	}
 
+	if reviewStatus != "" {
+		title += fmt.Sprintf(" [review=%s]", reviewStatus)
+	}
 	if relativeOnly {
 		title += " [relative only]"
 	}
@@ -1564,11 +1634,12 @@ func (a App) runListUpcomingEvents(ctx context.Context, args []string) error {
 
 		fmt.Fprintf(
 			a.Out,
-			"  %d. date=%s | type=%s | priority=%s | %s%s\n",
+			"  %d. date=%s | type=%s | priority=%s | review=%s | %s%s\n",
 			i+1,
 			e.EventDate,
 			e.EventType,
 			strings.ToUpper(e.Priority),
+			e.ReviewStatus,
 			statusText,
 			duplicateText,
 		)
@@ -1582,6 +1653,16 @@ func (a App) runListUpcomingEvents(ctx context.Context, args []string) error {
 		}
 
 		fmt.Fprintf(a.Out, "     source=%s\n", e.SourceText)
+
+		if strings.TrimSpace(e.ReviewedAt) != "" {
+			fmt.Fprintf(a.Out, "     reviewed_at=%s\n", e.ReviewedAt)
+		}
+		if strings.TrimSpace(e.ResolvedAt) != "" {
+			fmt.Fprintf(a.Out, "     resolved_at=%s\n", e.ResolvedAt)
+		}
+		if strings.TrimSpace(e.ResolutionNote) != "" {
+			fmt.Fprintf(a.Out, "     resolution_note=%s\n", e.ResolutionNote)
+		}
 
 		if verbose {
 			if e.DateKind == "relative" {
@@ -1701,6 +1782,7 @@ func (a App) runCaseDashboard(ctx context.Context, args []string) error {
 			fmt.Fprintf(a.Out, "    - %s\n", name)
 		}
 	}
+
 	fmt.Fprintf(a.Out, "Documents with unknown metadata: %d\n", result.DocumentsWithUnknownMetadata)
 	if result.DocumentsWithUnknownMetadata > 0 {
 		fmt.Fprintln(a.Out, "  Unknown metadata:")
@@ -1716,23 +1798,33 @@ func (a App) runCaseDashboard(ctx context.Context, args []string) error {
 			fmt.Fprintf(a.Out, "    - %s\n", name)
 		}
 	}
+
 	fmt.Fprintf(a.Out, "Needs attention: %v\n", result.NeedsAttention)
 	fmt.Fprintf(a.Out, "Top alert: %s\n", result.TopAlert)
 	fmt.Fprintln(a.Out)
+
 	fmt.Fprintln(a.Out, "Recommended next action")
 	fmt.Fprintf(a.Out, "%s\n", result.RecommendedNextAction)
-
 	fmt.Fprintln(a.Out)
+
 	fmt.Fprintln(a.Out, "Hint")
 	fmt.Fprintf(a.Out, "%s\n", result.ProceduralHint)
+
 	fmt.Fprintf(a.Out, "Events: %d\n", len(result.UpcomingEvents))
 	fmt.Fprintf(a.Out, "  Overdue: %d\n", result.OverdueCount)
 	fmt.Fprintf(a.Out, "  Today: %d\n", result.TodayCount)
 	fmt.Fprintf(a.Out, "  Upcoming: %d\n", result.UpcomingCount)
+
 	fmt.Fprintf(a.Out, "  Critical: %d\n", result.CriticalCount)
 	fmt.Fprintf(a.Out, "  High: %d\n", result.HighCount)
 	fmt.Fprintf(a.Out, "  Medium: %d\n", result.MediumCount)
 	fmt.Fprintf(a.Out, "  Low: %d\n", result.LowCount)
+
+	fmt.Fprintf(a.Out, "  Pending review: %d\n", result.PendingReviewCount)
+	fmt.Fprintf(a.Out, "  Reviewed: %d\n", result.ReviewedCount)
+	fmt.Fprintf(a.Out, "  Resolved: %d\n", result.ResolvedCount)
+	fmt.Fprintf(a.Out, "  Active events: %d\n", result.ActiveEventCount)
+	fmt.Fprintf(a.Out, "  Resolved events: %d\n", result.ResolvedEventCount)
 	fmt.Fprintln(a.Out)
 
 	if len(result.UpcomingEvents) == 0 {
@@ -1792,6 +1884,19 @@ func (a App) runCaseDashboard(ctx context.Context, args []string) error {
 
 			if len(e.DocumentNames) > 0 {
 				fmt.Fprintf(a.Out, "     documents=%s\n", strings.Join(e.DocumentNames, ", "))
+			}
+
+			if strings.TrimSpace(e.ReviewStatus) != "" {
+				fmt.Fprintf(a.Out, "     review=%s\n", e.ReviewStatus)
+			}
+			if strings.TrimSpace(e.ReviewedAt) != "" {
+				fmt.Fprintf(a.Out, "     reviewed_at=%s\n", e.ReviewedAt)
+			}
+			if strings.TrimSpace(e.ResolvedAt) != "" {
+				fmt.Fprintf(a.Out, "     resolved_at=%s\n", e.ResolvedAt)
+			}
+			if strings.TrimSpace(e.ResolutionNote) != "" {
+				fmt.Fprintf(a.Out, "     resolution_note=%s\n", e.ResolutionNote)
 			}
 
 			if strings.TrimSpace(e.Computation) != "" {
@@ -1919,6 +2024,73 @@ func (a App) runCaseAudit(ctx context.Context, args []string) error {
 	for _, action := range result.RecommendedActions {
 		fmt.Fprintf(a.Out, "- %s\n", action)
 	}
+
+	return nil
+}
+
+func (a App) runMarkEventReviewed(ctx context.Context, args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf(`usage: event-review "<eventID>"`)
+	}
+
+	result, err := a.MarkEventReviewed.Execute(ctx, documentapp.MarkEventReviewedInput{
+		EventID: args[0],
+	})
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintln(a.Out, "Event marked as reviewed")
+	fmt.Fprintf(a.Out, "Event ID: %s\n", result.EventID)
+	fmt.Fprintf(a.Out, "Review status: %s\n", result.ReviewStatus)
+	fmt.Fprintf(a.Out, "Reviewed at: %s\n", result.ReviewedAt)
+	fmt.Fprintf(a.Out, "Resolved at: %s\n", result.ResolvedAt)
+	fmt.Fprintf(a.Out, "Resolution note: %s\n", result.ResolutionNote)
+
+	return nil
+}
+
+func (a App) runMarkEventResolved(ctx context.Context, args []string) error {
+	if len(args) < 2 {
+		return fmt.Errorf(`usage: event-resolve "<eventID>" "<resolutionNote>"`)
+	}
+
+	result, err := a.MarkEventResolved.Execute(ctx, documentapp.MarkEventResolvedInput{
+		EventID:        args[0],
+		ResolutionNote: args[1],
+	})
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintln(a.Out, "Event marked as resolved")
+	fmt.Fprintf(a.Out, "Event ID: %s\n", result.EventID)
+	fmt.Fprintf(a.Out, "Review status: %s\n", result.ReviewStatus)
+	fmt.Fprintf(a.Out, "Reviewed at: %s\n", result.ReviewedAt)
+	fmt.Fprintf(a.Out, "Resolved at: %s\n", result.ResolvedAt)
+	fmt.Fprintf(a.Out, "Resolution note: %s\n", result.ResolutionNote)
+
+	return nil
+}
+
+func (a App) runReopenEvent(ctx context.Context, args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf(`usage: event-reopen "<eventID>"`)
+	}
+
+	result, err := a.ReopenEvent.Execute(ctx, documentapp.ReopenEventInput{
+		EventID: args[0],
+	})
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintln(a.Out, "Event reopened")
+	fmt.Fprintf(a.Out, "Event ID: %s\n", result.EventID)
+	fmt.Fprintf(a.Out, "Review status: %s\n", result.ReviewStatus)
+	fmt.Fprintf(a.Out, "Reviewed at: %s\n", result.ReviewedAt)
+	fmt.Fprintf(a.Out, "Resolved at: %s\n", result.ResolvedAt)
+	fmt.Fprintf(a.Out, "Resolution note: %s\n", result.ResolutionNote)
 
 	return nil
 }

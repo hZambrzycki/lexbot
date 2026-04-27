@@ -6,6 +6,7 @@ import (
 	documentapp "lexbox/internal/application/document"
 	"lexbox/internal/application/ports"
 	"lexbox/internal/domain/casefile"
+	"lexbox/internal/domain/document"
 	"lexbox/internal/domain/shared"
 	"strings"
 )
@@ -37,6 +38,12 @@ type CaseFileDashboardResult struct {
 	HighCount     int
 	MediumCount   int
 	LowCount      int
+
+	PendingReviewCount int
+	ReviewedCount      int
+	ResolvedCount      int
+	ActiveEventCount   int
+	ResolvedEventCount int
 
 	NeedsAttention        bool
 	TopAlert              string
@@ -75,6 +82,44 @@ func (uc GetCaseFileDashboard) Execute(ctx context.Context, in GetCaseFileDashbo
 		DocumentsWithoutTextList:         []string{},
 		DocumentsWithUnknownMetadataList: []string{},
 		DocumentsWithoutEventsList:       []string{},
+	}
+
+	activeEvents := make([]documentapp.UpcomingEvent, 0, len(events))
+
+	for _, e := range events {
+		switch e.Status {
+		case "overdue":
+			result.OverdueCount++
+		case "today":
+			result.TodayCount++
+		case "upcoming":
+			result.UpcomingCount++
+		}
+
+		switch e.Priority {
+		case "critical":
+			result.CriticalCount++
+		case "high":
+			result.HighCount++
+		case "medium":
+			result.MediumCount++
+		case "low":
+			result.LowCount++
+		}
+
+		switch normalizeReviewStatus(e.ReviewStatus) {
+		case document.ReviewStatusResolved:
+			result.ResolvedCount++
+			result.ResolvedEventCount++
+		case document.ReviewStatusReviewed:
+			result.ReviewedCount++
+			result.ActiveEventCount++
+			activeEvents = append(activeEvents, e)
+		default:
+			result.PendingReviewCount++
+			result.ActiveEventCount++
+			activeEvents = append(activeEvents, e)
+		}
 	}
 
 	for _, doc := range detail.Documents {
@@ -116,42 +161,24 @@ func (uc GetCaseFileDashboard) Execute(ctx context.Context, in GetCaseFileDashbo
 			if err != nil {
 				return CaseFileDashboardResult{}, err
 			}
-			if len(docEvents) == 0 {
+
+			activeDocEvents := filterActiveDocumentEvents(docEvents)
+			if len(activeDocEvents) == 0 {
 				result.DocumentsWithoutEvents++
 				result.DocumentsWithoutEventsList = append(result.DocumentsWithoutEventsList, doc.OriginalName)
 			}
 		}
 	}
 
-	for _, e := range events {
-		switch e.Status {
-		case "overdue":
-			result.OverdueCount++
-		case "today":
-			result.TodayCount++
-		case "upcoming":
-			result.UpcomingCount++
-		}
+	result.RecommendedNextAction = buildDashboardRecommendedAction(activeEvents)
+	result.ProceduralHint = buildDashboardProceduralHint(activeEvents)
+	result.NeedsAttention, result.TopAlert = buildDashboardAlert(result, activeEvents)
 
-		switch e.Priority {
-		case "critical":
-			result.CriticalCount++
-		case "high":
-			result.HighCount++
-		case "medium":
-			result.MediumCount++
-		case "low":
-			result.LowCount++
-		}
-	}
-	result.RecommendedNextAction = buildDashboardRecommendedAction(events)
-	result.ProceduralHint = buildDashboardProceduralHint(events)
-	result.NeedsAttention, result.TopAlert = buildDashboardAlert(result)
 	return result, nil
 }
 
-func buildDashboardAlert(result CaseFileDashboardResult) (bool, string) {
-	best := selectTopEvent(result.UpcomingEvents)
+func buildDashboardAlert(result CaseFileDashboardResult, activeEvents []documentapp.UpcomingEvent) (bool, string) {
+	best := selectTopEvent(activeEvents)
 
 	if best != nil {
 		statusText := ""
@@ -181,7 +208,10 @@ func buildDashboardAlert(result CaseFileDashboardResult) (bool, string) {
 		return true, "some documents still have unknown metadata"
 
 	case result.DocumentsWithoutEvents > 0:
-		return true, "some documents have no detected events"
+		return true, "some documents have no active detected events"
+
+	case result.ResolvedCount > 0:
+		return false, "all detected events are resolved"
 
 	default:
 		return false, "no immediate alerts"
@@ -207,6 +237,11 @@ func selectTopEvent(events []documentapp.UpcomingEvent) *documentapp.UpcomingEve
 }
 
 func isBetterEvent(a, b *documentapp.UpcomingEvent) bool {
+	// 0. review status: pending > reviewed
+	if reviewStatusRank(a.ReviewStatus) != reviewStatusRank(b.ReviewStatus) {
+		return reviewStatusRank(a.ReviewStatus) < reviewStatusRank(b.ReviewStatus)
+	}
+
 	// 1. status priority: overdue > today > upcoming
 	if statusRank(a.Status) != statusRank(b.Status) {
 		return statusRank(a.Status) < statusRank(b.Status)
@@ -245,6 +280,37 @@ func priorityRank(p string) int {
 	}
 }
 
+func reviewStatusRank(s string) int {
+	switch normalizeReviewStatus(s) {
+	case document.ReviewStatusPending:
+		return 0
+	case document.ReviewStatusReviewed:
+		return 1
+	case document.ReviewStatusResolved:
+		return 2
+	default:
+		return 0
+	}
+}
+
+func normalizeReviewStatus(s string) string {
+	value := strings.TrimSpace(strings.ToLower(s))
+	if value == "" {
+		return document.ReviewStatusPending
+	}
+	return value
+}
+
+func filterActiveDocumentEvents(events []document.Event) []document.Event {
+	active := make([]document.Event, 0, len(events))
+	for _, e := range events {
+		if normalizeReviewStatus(e.ReviewStatus) != document.ReviewStatusResolved {
+			active = append(active, e)
+		}
+	}
+	return active
+}
+
 func shortDocumentName(names []string) string {
 	if len(names) == 0 {
 		return ""
@@ -266,11 +332,17 @@ func buildDashboardRecommendedAction(events []documentapp.UpcomingEvent) string 
 		docPart = fmt.Sprintf(" (%s)", doc)
 	}
 
+	reviewPrefix := ""
+	if normalizeReviewStatus(best.ReviewStatus) == document.ReviewStatusReviewed {
+		reviewPrefix = "re-check "
+	}
+
 	switch best.Status {
 	case "overdue":
 		if best.Priority == "critical" {
 			return fmt.Sprintf(
-				"%s overdue critical %s%s from %s immediately",
+				"%s%s overdue critical %s%s from %s immediately",
+				reviewPrefix,
 				verb,
 				best.EventType,
 				docPart,
@@ -278,7 +350,8 @@ func buildDashboardRecommendedAction(events []documentapp.UpcomingEvent) string 
 			)
 		}
 		return fmt.Sprintf(
-			"%s overdue %s%s from %s",
+			"%s%s overdue %s%s from %s",
+			reviewPrefix,
 			verb,
 			best.EventType,
 			docPart,
@@ -287,7 +360,8 @@ func buildDashboardRecommendedAction(events []documentapp.UpcomingEvent) string 
 
 	case "today":
 		return fmt.Sprintf(
-			"%s %s%s due today (%s)",
+			"%s%s %s%s due today (%s)",
+			reviewPrefix,
 			verb,
 			best.EventType,
 			docPart,
@@ -297,7 +371,8 @@ func buildDashboardRecommendedAction(events []documentapp.UpcomingEvent) string 
 	case "upcoming":
 		if best.Priority == "high" || best.Priority == "critical" {
 			return fmt.Sprintf(
-				"%s upcoming %s%s for %s",
+				"%s%s upcoming %s%s for %s",
+				reviewPrefix,
 				verb,
 				best.EventType,
 				docPart,
@@ -305,7 +380,8 @@ func buildDashboardRecommendedAction(events []documentapp.UpcomingEvent) string 
 			)
 		}
 		return fmt.Sprintf(
-			"monitor upcoming %s%s for %s",
+			"%smonitor upcoming %s%s for %s",
+			reviewPrefix,
 			best.EventType,
 			docPart,
 			best.EventDate,

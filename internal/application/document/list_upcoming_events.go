@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"lexbox/internal/application/ports"
+	"lexbox/internal/domain/document"
 	"lexbox/internal/domain/shared"
 )
 
@@ -15,6 +16,7 @@ type ListUpcomingEventsInput struct {
 	CaseFileID   string
 	EventType    string
 	RelativeOnly bool
+	ReviewStatus string
 }
 
 type UpcomingEvent struct {
@@ -40,6 +42,11 @@ type UpcomingEvent struct {
 	CalendarScope  string
 	TriggerText    string
 	Computation    string
+
+	ReviewStatus   string
+	ReviewedAt     string
+	ResolvedAt     string
+	ResolutionNote string
 }
 
 type ListUpcomingEvents struct {
@@ -56,8 +63,12 @@ func (uc ListUpcomingEvents) Execute(ctx context.Context, in ListUpcomingEventsI
 	}
 
 	eventType := strings.TrimSpace(strings.ToLower(in.EventType))
+	reviewStatus := strings.TrimSpace(strings.ToLower(in.ReviewStatus))
+	if reviewStatus != "" && !document.IsValidReviewStatus(reviewStatus) {
+		return nil, shared.ErrInvalidAssociation
+	}
 
-	results, err := uc.Events.ListUpcoming(ctx, "", caseFileID, eventType)
+	results, err := uc.Events.ListUpcoming(ctx, "", caseFileID, eventType, reviewStatus)
 	if err != nil {
 		return nil, err
 	}
@@ -126,6 +137,11 @@ func (uc ListUpcomingEvents) Execute(ctx context.Context, in ListUpcomingEventsI
 			CalendarScope:  e.CalendarScope,
 			TriggerText:    e.TriggerText,
 			Computation:    computation,
+
+			ReviewStatus:   e.ReviewStatus,
+			ReviewedAt:     e.ReviewedAt,
+			ResolvedAt:     e.ResolvedAt,
+			ResolutionNote: e.ResolutionNote,
 		})
 	}
 
@@ -213,6 +229,13 @@ func deduplicateUpcomingEvents(items []UpcomingEvent) []UpcomingEvent {
 				result[idx].Priority = item.Priority
 			}
 
+			if reviewPriorityRank(item.ReviewStatus) < reviewPriorityRank(result[idx].ReviewStatus) {
+				result[idx].ReviewStatus = item.ReviewStatus
+				result[idx].ReviewedAt = item.ReviewedAt
+				result[idx].ResolvedAt = item.ResolvedAt
+				result[idx].ResolutionNote = item.ResolutionNote
+			}
+
 			continue
 		}
 
@@ -240,6 +263,12 @@ func deduplicateUpcomingEvents(items []UpcomingEvent) []UpcomingEvent {
 		pj := priorityRank(result[j].Priority)
 		if pi != pj {
 			return pi < pj
+		}
+
+		ri := reviewPriorityRank(result[i].ReviewStatus)
+		rj := reviewPriorityRank(result[j].ReviewStatus)
+		if ri != rj {
+			return ri < rj
 		}
 
 		if result[i].EventType != result[j].EventType {
@@ -341,6 +370,19 @@ func priorityRank(priority string) int {
 		return 3
 	default:
 		return 4
+	}
+}
+
+func reviewPriorityRank(reviewStatus string) int {
+	switch strings.TrimSpace(strings.ToLower(reviewStatus)) {
+	case "pending", "":
+		return 0
+	case "reviewed":
+		return 1
+	case "resolved":
+		return 2
+	default:
+		return 0
 	}
 }
 

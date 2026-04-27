@@ -12,6 +12,21 @@ const (
 	EventTypeFiling       = "filing"
 )
 
+const (
+	ReviewStatusPending  = "pending"
+	ReviewStatusReviewed = "reviewed"
+	ReviewStatusResolved = "resolved"
+)
+
+func IsValidReviewStatus(status string) bool {
+	switch status {
+	case ReviewStatusPending, ReviewStatusReviewed, ReviewStatusResolved:
+		return true
+	default:
+		return false
+	}
+}
+
 type Event struct {
 	ID             shared.ID
 	DocumentID     shared.ID
@@ -28,6 +43,11 @@ type Event struct {
 	CalendarScope  string
 	TriggerText    string
 	Computation    string
+
+	ReviewStatus   string
+	ReviewedAt     string
+	ResolvedAt     string
+	ResolutionNote string
 }
 
 func NewEvent(
@@ -75,5 +95,9 @@ func NewEvent(
 		CalendarScope:  calendarScope,
 		TriggerText:    triggerText,
 		Computation:    computation,
+		ReviewStatus:   ReviewStatusPending,
+		ReviewedAt:     "",
+		ResolvedAt:     "",
+		ResolutionNote: "",
 	}, nil
 }

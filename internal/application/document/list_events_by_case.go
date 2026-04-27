@@ -6,11 +6,13 @@ import (
 
 	"lexbox/internal/application/ports"
 	"lexbox/internal/application/querymodels"
+	"lexbox/internal/domain/document"
 	"lexbox/internal/domain/shared"
 )
 
 type ListEventsByCaseFileInput struct {
-	CaseFileID string
+	CaseFileID   string
+	ReviewStatus string
 }
 
 type ListEventsByCaseFile struct {
@@ -23,5 +25,14 @@ func (uc ListEventsByCaseFile) Execute(ctx context.Context, in ListEventsByCaseF
 		return nil, shared.ErrInvalidID
 	}
 
-	return uc.Events.ListByCaseFileID(ctx, caseFileID)
+	reviewStatus := normalizeReviewStatusFilter(in.ReviewStatus)
+	if reviewStatus != "" && !document.IsValidReviewStatus(reviewStatus) {
+		return nil, shared.ErrInvalidAssociation
+	}
+
+	return uc.Events.ListByCaseFileID(ctx, caseFileID, reviewStatus)
+}
+
+func normalizeReviewStatusFilter(value string) string {
+	return strings.TrimSpace(strings.ToLower(value))
 }

@@ -45,7 +45,9 @@ type DocumentMetadataRepository interface {
 
 type DocumentEventRepository interface {
 	ReplaceByDocumentID(ctx context.Context, documentID shared.ID, events []document.Event) error
+	GetByID(ctx context.Context, eventID shared.ID) (document.Event, error)
+	UpdateReviewState(ctx context.Context, eventID shared.ID, reviewStatus, reviewedAt, resolvedAt, resolutionNote string) error
 	ListByDocumentID(ctx context.Context, documentID shared.ID) ([]document.Event, error)
-	ListByCaseFileID(ctx context.Context, caseFileID shared.ID) ([]querymodels.CaseFileEventResult, error)
-	ListUpcoming(ctx context.Context, fromDate string, caseFileID shared.ID, eventType string) ([]querymodels.CaseFileEventResult, error)
+	ListByCaseFileID(ctx context.Context, caseFileID shared.ID, reviewStatus string) ([]querymodels.CaseFileEventResult, error)
+	ListUpcoming(ctx context.Context, fromDate string, caseFileID shared.ID, eventType string, reviewStatus string) ([]querymodels.CaseFileEventResult, error)
 }

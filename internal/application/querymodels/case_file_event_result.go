@@ -16,4 +16,9 @@ type CaseFileEventResult struct {
 	CalendarScope  string
 	TriggerText    string
 	Computation    string
+
+	ReviewStatus   string
+	ReviewedAt     string
+	ResolvedAt     string
+	ResolutionNote string
 }
