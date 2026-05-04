@@ -14,6 +14,10 @@ type Document struct {
 
 	CreatedAt shared.Timestamp
 	UpdatedAt shared.Timestamp
+
+	ReviewStatus string
+	ReviewedAt   string
+	ReviewNote   string
 }
 
 func NewDocument(
@@ -39,6 +43,10 @@ func NewDocument(
 		StoragePath:  storagePath,
 		CreatedAt:    now,
 		UpdatedAt:    now,
+
+		ReviewStatus: DocumentReviewStatusPending,
+		ReviewedAt:   "",
+		ReviewNote:   "",
 	}, nil
 }
 
@@ -47,4 +55,19 @@ func (d Document) WithUpdatedMetadata(mimeType string, fileHash string) Document
 	d.FileHash = fileHash
 	d.UpdatedAt = shared.Now()
 	return d
+}
+
+const (
+	DocumentReviewStatusPending  = "pending_review"
+	DocumentReviewStatusReviewed = "reviewed"
+	DocumentReviewStatusError    = "error"
+)
+
+func IsValidDocumentReviewStatus(status string) bool {
+	switch status {
+	case DocumentReviewStatusPending, DocumentReviewStatusReviewed, DocumentReviewStatusError:
+		return true
+	default:
+		return false
+	}
 }

@@ -5,6 +5,12 @@ import (
 	"testing"
 )
 
+func unfoldICS(value string) string {
+	value = strings.ReplaceAll(value, "\r\n ", "")
+	value = strings.ReplaceAll(value, "\n ", "")
+	return value
+}
+
 func TestBuildICSCalendar_IncludesComputationAndTrigger(t *testing.T) {
 	events := []UpcomingEvent{
 		{
@@ -26,31 +32,36 @@ func TestBuildICSCalendar_IncludesComputationAndTrigger(t *testing.T) {
 			AnchorSource:   "notification_line",
 			RelativeDays:   3,
 			IsBusinessDays: true,
+			AddExtraDay:    true,
 			TriggerText:    "plazo de 3 dias habiles desde el siguiente dia habil",
 			Computation:    "anchor + next_day + 3 business days",
 		},
 	}
 
-	ics := buildICSCalendar(events)
+	ics := unfoldICS(buildICSCalendar(events))
 
 	if !strings.Contains(ics, "BEGIN:VEVENT") {
 		t.Fatal("expected VEVENT block")
 	}
 
-	if !strings.Contains(ics, "Computation: anchor + next_day + 3 business days") {
-		t.Fatal("missing computation in DESCRIPTION")
+	if !strings.Contains(ics, "Cómputo: Fecha base + día siguiente + 3 días hábiles") {
+		t.Fatal("missing translated computation in DESCRIPTION")
 	}
 
-	if !strings.Contains(ics, "Trigger: plazo de 3 dias habiles desde el siguiente dia habil") {
+	if !strings.Contains(ics, "Disparador textual: plazo de 3 dias habiles desde el siguiente dia habil") {
 		t.Fatal("missing trigger in DESCRIPTION")
 	}
 
-	if !strings.Contains(ics, "Anchor date: 2026-04-11") {
+	if !strings.Contains(ics, "Fecha base: 2026-04-11") {
 		t.Fatal("missing anchor date in DESCRIPTION")
 	}
 
-	if !strings.Contains(ics, "Business days: true") {
+	if !strings.Contains(ics, "Días hábiles: sí") {
 		t.Fatal("missing business days flag")
+	}
+
+	if !strings.Contains(ics, "Añade día siguiente: sí") {
+		t.Fatal("missing add extra day flag")
 	}
 }
 
@@ -70,14 +81,14 @@ func TestBuildICSCalendar_AbsoluteEventIncludesComputation(t *testing.T) {
 		},
 	}
 
-	ics := buildICSCalendar(events)
+	ics := unfoldICS(buildICSCalendar(events))
 
-	if !strings.Contains(ics, "Computation: absolute date") {
+	if !strings.Contains(ics, "Cómputo: Fecha absoluta") {
 		t.Fatal("expected absolute computation in DESCRIPTION")
 	}
 
-	if !strings.Contains(ics, "Date kind: absolute") {
-		t.Fatal("expected date kind absolute")
+	if !strings.Contains(ics, "Tipo de fecha: Fecha absoluta") {
+		t.Fatal("expected absolute date kind")
 	}
 }
 
@@ -113,6 +124,30 @@ func TestBuildICSCalendar_MultipleEventsRemainSeparated(t *testing.T) {
 	}
 }
 
+func TestBuildICSCalendar_UsesSpanishCalendarMetadata(t *testing.T) {
+	events := []UpcomingEvent{
+		{
+			EventID:     "1",
+			EventType:   "deadline",
+			EventDate:   "2026-04-16",
+			Priority:    "critical",
+			Status:      "today",
+			DateKind:    "relative",
+			Computation: "anchor + 3 business days",
+		},
+	}
+
+	ics := buildICSCalendar(events)
+
+	if !strings.Contains(ics, "PRODID:-//LEXBOX//Agenda Procesal//ES") {
+		t.Fatal("expected Spanish PRODID")
+	}
+
+	if !strings.Contains(ics, "X-WR-CALNAME:LEXBOX - Agenda procesal") {
+		t.Fatal("expected calendar name")
+	}
+}
+
 func TestEscapeICSText(t *testing.T) {
 	input := "texto, con; caracteres \\ raros\nnueva linea"
 	got := escapeICSText(input)
@@ -131,5 +166,21 @@ func TestEscapeICSText(t *testing.T) {
 
 	if !strings.Contains(got, `\\`) {
 		t.Fatal("backslash not escaped")
+	}
+
+	if !strings.Contains(got, `\n`) {
+		t.Fatal("newline escape sequence missing")
+	}
+}
+
+func TestWriteICSLine_FoldsLongLines(t *testing.T) {
+	var sb strings.Builder
+
+	writeICSLine(&sb, "DESCRIPTION", strings.Repeat("a", 120))
+
+	got := sb.String()
+
+	if !strings.Contains(got, "\r\n ") {
+		t.Fatal("expected folded ICS line continuation")
 	}
 }

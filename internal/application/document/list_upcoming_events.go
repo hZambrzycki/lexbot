@@ -20,9 +20,14 @@ type ListUpcomingEventsInput struct {
 }
 
 type UpcomingEvent struct {
-	EventID        string
-	DocumentID     string
-	OriginalName   string
+	EventID      string
+	DocumentID   string
+	OriginalName string
+
+	CaseFileID        string
+	CaseFileReference string
+	CaseFileTitle     string
+
 	EventType      string
 	EventDate      string
 	SourceText     string
@@ -55,6 +60,7 @@ type ListUpcomingEvents struct {
 
 func (uc ListUpcomingEvents) Execute(ctx context.Context, in ListUpcomingEventsInput) ([]UpcomingEvent, error) {
 	var caseFileID shared.ID
+
 	if strings.TrimSpace(in.CaseFileID) != "" {
 		caseFileID = shared.NewID(strings.TrimSpace(in.CaseFileID))
 		if caseFileID == "" {
@@ -64,6 +70,7 @@ func (uc ListUpcomingEvents) Execute(ctx context.Context, in ListUpcomingEventsI
 
 	eventType := strings.TrimSpace(strings.ToLower(in.EventType))
 	reviewStatus := strings.TrimSpace(strings.ToLower(in.ReviewStatus))
+
 	if reviewStatus != "" && !document.IsValidReviewStatus(reviewStatus) {
 		return nil, shared.ErrInvalidAssociation
 	}
@@ -115,9 +122,14 @@ func (uc ListUpcomingEvents) Execute(ctx context.Context, in ListUpcomingEventsI
 		}
 
 		enriched = append(enriched, UpcomingEvent{
-			EventID:        e.EventID,
-			DocumentID:     e.DocumentID,
-			OriginalName:   e.OriginalName,
+			EventID:      e.EventID,
+			DocumentID:   e.DocumentID,
+			OriginalName: e.OriginalName,
+
+			CaseFileID:        e.CaseFileID,
+			CaseFileReference: e.CaseFileReference,
+			CaseFileTitle:     e.CaseFileTitle,
+
 			EventType:      e.EventType,
 			EventDate:      e.EventDate,
 			SourceText:     e.SourceText,
@@ -190,6 +202,7 @@ func classifyUpcomingPriority(eventType string, daysRemaining int) string {
 
 func deduplicateUpcomingEvents(items []UpcomingEvent) []UpcomingEvent {
 	type key struct {
+		CaseFileID     string
 		EventDate      string
 		EventType      string
 		DateKind       string
@@ -205,6 +218,7 @@ func deduplicateUpcomingEvents(items []UpcomingEvent) []UpcomingEvent {
 
 	for _, item := range items {
 		k := key{
+			CaseFileID:     strings.TrimSpace(item.CaseFileID),
 			EventDate:      item.EventDate,
 			EventType:      item.EventType,
 			DateKind:       strings.TrimSpace(item.DateKind),
@@ -269,6 +283,10 @@ func deduplicateUpcomingEvents(items []UpcomingEvent) []UpcomingEvent {
 		rj := reviewPriorityRank(result[j].ReviewStatus)
 		if ri != rj {
 			return ri < rj
+		}
+
+		if result[i].CaseFileReference != result[j].CaseFileReference {
+			return result[i].CaseFileReference < result[j].CaseFileReference
 		}
 
 		if result[i].EventType != result[j].EventType {

@@ -32,6 +32,43 @@ type NoteResponse struct {
 	UpdatedAt  string `json:"updated_at"`
 }
 
+type DocumentDetailResponse struct {
+	Document             DocumentResponse      `json:"document"`
+	FileExists           bool                  `json:"file_exists"`
+	HasExtractedText     bool                  `json:"has_extracted_text"`
+	ExtractedText        string                `json:"extracted_text"`
+	ExtractedTextLength  int                   `json:"extracted_text_length"`
+	ExtractedTextPreview string                `json:"extracted_text_preview"`
+	HasMetadata          bool                  `json:"has_metadata"`
+	DocumentType         string                `json:"document_type"`
+	LegalArea            string                `json:"legal_area"`
+	MetadataAnalyzedAt   string                `json:"metadata_analyzed_at"`
+	HasEvents            bool                  `json:"has_events"`
+	Events               []DocumentEventDetail `json:"events"`
+}
+
+type DocumentEventDetail struct {
+	EventID        string `json:"event_id"`
+	DocumentID     string `json:"document_id"`
+	EventType      string `json:"event_type"`
+	EventDate      string `json:"event_date"`
+	SourceText     string `json:"source_text"`
+	CreatedAt      string `json:"created_at"`
+	AnchorDate     string `json:"anchor_date,omitempty"`
+	DateKind       string `json:"date_kind,omitempty"`
+	AnchorSource   string `json:"anchor_source,omitempty"`
+	RelativeDays   int    `json:"relative_days,omitempty"`
+	IsBusinessDays bool   `json:"is_business_days,omitempty"`
+	AddExtraDay    bool   `json:"add_extra_day,omitempty"`
+	CalendarScope  string `json:"calendar_scope,omitempty"`
+	TriggerText    string `json:"trigger_text,omitempty"`
+	Computation    string `json:"computation,omitempty"`
+	ReviewStatus   string `json:"review_status"`
+	ReviewedAt     string `json:"reviewed_at,omitempty"`
+	ResolvedAt     string `json:"resolved_at,omitempty"`
+	ResolutionNote string `json:"resolution_note,omitempty"`
+}
+
 type DocumentResponse struct {
 	ID           string `json:"id"`
 	CaseFileID   string `json:"case_file_id"`
@@ -50,9 +87,14 @@ type CaseFileDetailResponse struct {
 }
 
 type EventResponse struct {
-	EventID        string   `json:"event_id"`
-	DocumentID     string   `json:"document_id,omitempty"`
-	OriginalName   string   `json:"original_name,omitempty"`
+	EventID      string `json:"event_id"`
+	DocumentID   string `json:"document_id,omitempty"`
+	OriginalName string `json:"original_name,omitempty"`
+
+	CaseFileID        string `json:"case_file_id,omitempty"`
+	CaseFileReference string `json:"case_file_reference,omitempty"`
+	CaseFileTitle     string `json:"case_file_title,omitempty"`
+
 	EventType      string   `json:"event_type"`
 	EventDate      string   `json:"event_date"`
 	SourceText     string   `json:"source_text"`
@@ -83,6 +125,14 @@ type EventActionResponse struct {
 	ReviewedAt     string `json:"reviewed_at,omitempty"`
 	ResolvedAt     string `json:"resolved_at,omitempty"`
 	ResolutionNote string `json:"resolution_note,omitempty"`
+}
+
+type ImportDocumentResponse struct {
+	Document         DocumentResponse `json:"document"`
+	TextExtracted    bool             `json:"text_extracted"`
+	MetadataAnalyzed bool             `json:"metadata_analyzed"`
+	EventsAnalyzed   bool             `json:"events_analyzed"`
+	EventsDetected   int              `json:"events_detected"`
 }
 
 type DashboardResponse struct {
@@ -182,9 +232,14 @@ func toCaseFileListResponse(items []domaincasefile.CaseFile) []CaseFileResponse 
 
 func toCaseFileEventResponse(e querymodels.CaseFileEventResult) EventResponse {
 	return EventResponse{
-		EventID:        e.EventID,
-		DocumentID:     e.DocumentID,
-		OriginalName:   e.OriginalName,
+		EventID:      e.EventID,
+		DocumentID:   e.DocumentID,
+		OriginalName: e.OriginalName,
+
+		CaseFileID:        e.CaseFileID,
+		CaseFileReference: e.CaseFileReference,
+		CaseFileTitle:     e.CaseFileTitle,
+
 		EventType:      e.EventType,
 		EventDate:      e.EventDate,
 		SourceText:     e.SourceText,
@@ -214,9 +269,14 @@ func toCaseFileEventsResponse(items []querymodels.CaseFileEventResult) []EventRe
 
 func toUpcomingEventResponse(e documentapp.UpcomingEvent) EventResponse {
 	return EventResponse{
-		EventID:        e.EventID,
-		DocumentID:     e.DocumentID,
-		OriginalName:   e.OriginalName,
+		EventID:      e.EventID,
+		DocumentID:   e.DocumentID,
+		OriginalName: e.OriginalName,
+
+		CaseFileID:        e.CaseFileID,
+		CaseFileReference: e.CaseFileReference,
+		CaseFileTitle:     e.CaseFileTitle,
+
 		EventType:      e.EventType,
 		EventDate:      e.EventDate,
 		SourceText:     e.SourceText,
@@ -288,5 +348,61 @@ func toDashboardResponse(in casefileapp.CaseFileDashboardResult) DashboardRespon
 		TopAlert:                         in.TopAlert,
 		RecommendedNextAction:            in.RecommendedNextAction,
 		ProceduralHint:                   in.ProceduralHint,
+	}
+}
+
+func toImportDocumentResponse(result documentapp.ImportDocumentResult) ImportDocumentResponse {
+	return ImportDocumentResponse{
+		Document:         toDocumentResponse(result.Document),
+		TextExtracted:    result.TextExtracted,
+		MetadataAnalyzed: result.MetadataAnalyzed,
+		EventsAnalyzed:   result.EventsAnalyzed,
+		EventsDetected:   result.EventsDetected,
+	}
+}
+
+func toDocumentEventDetail(e domaindocument.Event) DocumentEventDetail {
+	return DocumentEventDetail{
+		EventID:        e.ID.String(),
+		DocumentID:     e.DocumentID.String(),
+		EventType:      e.EventType,
+		EventDate:      e.EventDate,
+		SourceText:     e.SourceText,
+		CreatedAt:      e.CreatedAt,
+		AnchorDate:     e.AnchorDate,
+		DateKind:       e.DateKind,
+		AnchorSource:   e.AnchorSource,
+		RelativeDays:   e.RelativeDays,
+		IsBusinessDays: e.IsBusinessDays,
+		AddExtraDay:    e.AddExtraDay,
+		CalendarScope:  e.CalendarScope,
+		TriggerText:    e.TriggerText,
+		Computation:    e.Computation,
+		ReviewStatus:   e.ReviewStatus,
+		ReviewedAt:     e.ReviewedAt,
+		ResolvedAt:     e.ResolvedAt,
+		ResolutionNote: e.ResolutionNote,
+	}
+}
+
+func toDocumentDetailResponse(in documentapp.GetDocumentDetailResult) DocumentDetailResponse {
+	events := make([]DocumentEventDetail, 0, len(in.Events))
+	for _, event := range in.Events {
+		events = append(events, toDocumentEventDetail(event))
+	}
+
+	return DocumentDetailResponse{
+		Document:             toDocumentResponse(in.Document),
+		FileExists:           in.FileExists,
+		HasExtractedText:     in.HasExtractedText,
+		ExtractedText:        in.ExtractedText,
+		ExtractedTextLength:  in.ExtractedTextLength,
+		ExtractedTextPreview: in.ExtractedTextPreview,
+		HasMetadata:          in.HasMetadata,
+		DocumentType:         in.DocumentType,
+		LegalArea:            in.LegalArea,
+		MetadataAnalyzedAt:   in.MetadataAnalyzedAt,
+		HasEvents:            in.HasEvents,
+		Events:               events,
 	}
 }

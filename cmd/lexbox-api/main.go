@@ -23,22 +23,32 @@ func main() {
 	server.RegisterRoutes(httpapi.RegisterHealthRoutes)
 
 	eventHandler := httpapi.EventHandler{
-		ListEventsByCaseFile: appServices.ListEventsByCaseFile,
-		ListUpcomingEvents:   appServices.ListUpcomingEvents,
-		MarkEventReviewed:    appServices.MarkEventReviewed,
-		MarkEventResolved:    appServices.MarkEventResolved,
-		ReopenEvent:          appServices.ReopenEvent,
+		GetEvent:                appServices.GetEvent,
+		ListEventsByCaseFile:    appServices.ListEventsByCaseFile,
+		ListUpcomingEvents:      appServices.ListUpcomingEvents,
+		ExportUpcomingEventsICS: appServices.ExportUpcomingEventsICS,
+		MarkEventReviewed:       appServices.MarkEventReviewed,
+		MarkEventResolved:       appServices.MarkEventResolved,
+		ReopenEvent:             appServices.ReopenEvent,
 	}
 
 	caseFileHandler := httpapi.CaseFileHandler{
+		CreateCaseFile:       appServices.CreateCaseFile,
 		ListCaseFiles:        appServices.ListCaseFiles,
 		GetCaseFileDetail:    appServices.GetCaseFileDetail,
 		GetCaseFileDashboard: appServices.GetCaseFileDashboard,
+		ImportDocument:       appServices.ImportDocument,
 		EventHandler:         eventHandler,
 	}
 
+	documentHandler := httpapi.DocumentHandler{
+		GetDocumentDetail: appServices.GetDocumentDetail,
+		DeleteDocument:    appServices.DeleteDocument,
+		ReprocessDocument: appServices.ReprocessDocument,
+	}
 	server.RegisterRoutes(caseFileHandler.Register)
 	server.RegisterRoutes(eventHandler.Register)
+	server.RegisterRoutes(documentHandler.Register)
 
 	log.Fatal(server.Start(":8080"))
 }

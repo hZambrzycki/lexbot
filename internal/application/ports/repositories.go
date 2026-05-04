@@ -32,10 +32,12 @@ type NoteRepository interface {
 type DocumentRepository interface {
 	Save(ctx context.Context, doc document.Document) error
 	Update(ctx context.Context, doc document.Document) error
+	Delete(ctx context.Context, id shared.ID) error
 	GetByID(ctx context.Context, id shared.ID) (document.Document, error)
 	ListAll(ctx context.Context) ([]document.Document, error)
 	ListByCaseFileID(ctx context.Context, caseFileID shared.ID) ([]document.Document, error)
 	GetByCaseFileIDAndFileHash(ctx context.Context, caseFileID shared.ID, fileHash string) (document.Document, error)
+	UpdateReviewState(ctx context.Context, id shared.ID, reviewStatus, reviewedAt, reviewNote string) error
 }
 
 type DocumentMetadataRepository interface {
@@ -46,6 +48,7 @@ type DocumentMetadataRepository interface {
 type DocumentEventRepository interface {
 	ReplaceByDocumentID(ctx context.Context, documentID shared.ID, events []document.Event) error
 	GetByID(ctx context.Context, eventID shared.ID) (document.Event, error)
+	GetDetailByID(ctx context.Context, eventID shared.ID) (querymodels.CaseFileEventResult, error)
 	UpdateReviewState(ctx context.Context, eventID shared.ID, reviewStatus, reviewedAt, resolvedAt, resolutionNote string) error
 	ListByDocumentID(ctx context.Context, documentID shared.ID) ([]document.Event, error)
 	ListByCaseFileID(ctx context.Context, caseFileID shared.ID, reviewStatus string) ([]querymodels.CaseFileEventResult, error)

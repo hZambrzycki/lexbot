@@ -13,9 +13,14 @@ func NewDB(path string) (*sql.DB, error) {
 		return nil, err
 	}
 
-	// Verificamos conexión real
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("cannot connect to database: %w", err)
+	}
+
+	// ⚠️ CLAVE: activar foreign keys
+	_, err = db.Exec(`PRAGMA foreign_keys = ON;`)
+	if err != nil {
+		return nil, fmt.Errorf("cannot enable foreign keys: %w", err)
 	}
 
 	return db, nil

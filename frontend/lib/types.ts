@@ -36,6 +36,11 @@ export type EventItem = {
   event_id: string;
   document_id?: string;
   original_name?: string;
+
+  case_file_id?: string;
+  case_file_reference?: string;
+  case_file_title?: string;
+
   event_type: string;
   event_date: string;
   source_text: string;
@@ -101,4 +106,51 @@ export type EventActionResponse = {
   reviewed_at?: string;
   resolved_at?: string;
   resolution_note?: string;
+};
+
+export type CreateCaseFileInput = {
+  client_id: string;
+  reference: string;
+  title: string;
+  type: string;
+  description: string;
+  calendar_scope: string;
+  august_non_business: boolean;
+};
+
+export type DocumentEventDetail = {
+  event_id: string;
+  document_id: string;
+  event_type: string;
+  event_date: string;
+  source_text: string;
+  created_at: string;
+  anchor_date?: string;
+  date_kind?: string;
+  anchor_source?: string;
+  relative_days?: number;
+  is_business_days?: boolean;
+  add_extra_day?: boolean;
+  calendar_scope?: string;
+  trigger_text?: string;
+  computation?: string;
+  review_status: string;
+  reviewed_at?: string;
+  resolved_at?: string;
+  resolution_note?: string;
+};
+
+export type DocumentDetail = {
+  document: DocumentItem;
+  file_exists: boolean;
+  has_extracted_text: boolean;
+  extracted_text: string;
+  extracted_text_length: number;
+  extracted_text_preview: string;
+  has_metadata: boolean;
+  document_type: string;
+  legal_area: string;
+  metadata_analyzed_at: string;
+  has_events: boolean;
+  events: DocumentEventDetail[];
 };

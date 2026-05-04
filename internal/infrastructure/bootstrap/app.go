@@ -32,6 +32,8 @@ type App struct {
 	AttachDocument             documentapp.AttachDocument
 	ImportDocument             documentapp.ImportDocument
 	ListDocumentsByCaseFile    documentapp.ListDocumentsByCaseFile
+	DeleteDocument             documentapp.DeleteDocument
+	UpdateDocumentReviewState  documentapp.UpdateDocumentReviewState
 	ExtractDocumentText        documentapp.ExtractDocumentText
 	SearchDocuments            documentapp.SearchDocuments
 	GetDocumentDetail          documentapp.GetDocumentDetail
@@ -56,6 +58,8 @@ type App struct {
 	ReopenEvent                documentapp.ReopenEvent
 	FixCaseFile                casefileapp.FixCaseFile
 	AuditCaseFile              casefileapp.AuditCaseFile
+	GetEvent                   documentapp.GetEvent
+	ReprocessDocument          documentapp.ReprocessDocument
 }
 
 func BuildApp(ctx context.Context) (*App, error) {
@@ -95,6 +99,10 @@ func BuildApp(ctx context.Context) (*App, error) {
 		return nil, err
 	}
 	if err := reposqlite.RunMigrations(db, "migrations/008_document_event_review_state.sql"); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if err := reposqlite.RunMigrations(db, "migrations/009_document_review_state.sql"); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -153,6 +161,12 @@ func BuildApp(ctx context.Context) (*App, error) {
 		DocumentContents: documentContentRepo,
 		CaseFiles:        caseFileRepo,
 		AnalyzeOne:       analyzeDocumentEvents,
+	}
+
+	reprocessDocument := documentapp.ReprocessDocument{
+		ReindexDocument:         reindexDocument,
+		AnalyzeDocumentMetadata: analyzeDocumentMetadata,
+		AnalyzeDocumentEvents:   analyzeDocumentEvents,
 	}
 
 	listUpcomingEvents := documentapp.ListUpcomingEvents{
@@ -222,7 +236,7 @@ func BuildApp(ctx context.Context) (*App, error) {
 		ListNotesByCaseFile: noteapp.ListNotesByCaseFile{
 			Notes: noteRepo,
 		},
-
+		ReprocessDocument: reprocessDocument,
 		AttachDocument: documentapp.AttachDocument{
 			Documents: documentRepo,
 			CaseFiles: caseFileRepo,
@@ -245,7 +259,13 @@ func BuildApp(ctx context.Context) (*App, error) {
 			Documents: documentRepo,
 			Metadata:  documentMetadataRepo,
 		},
-
+		DeleteDocument: documentapp.DeleteDocument{
+			Documents: documentRepo,
+			Storage:   storage,
+		},
+		UpdateDocumentReviewState: documentapp.UpdateDocumentReviewState{
+			Documents: documentRepo,
+		},
 		ExtractDocumentText: extractDocumentText,
 
 		SearchDocuments: documentapp.SearchDocuments{
@@ -334,6 +354,10 @@ func BuildApp(ctx context.Context) (*App, error) {
 				DocumentContents: documentContentRepo,
 			},
 			GetDashboard: getCaseFileDashboard,
+		},
+
+		GetEvent: documentapp.GetEvent{
+			Events: documentEventRepo,
 		},
 	}
 

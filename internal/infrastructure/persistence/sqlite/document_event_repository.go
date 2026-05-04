@@ -220,6 +220,7 @@ func (r *DocumentEventRepository) UpdateReviewState(ctx context.Context, eventID
 	if err != nil {
 		return err
 	}
+
 	if rowsAffected == 0 {
 		return sql.ErrNoRows
 	}
@@ -261,6 +262,7 @@ func (r *DocumentEventRepository) ListByDocumentID(ctx context.Context, document
 	defer rows.Close()
 
 	events := make([]document.Event, 0)
+
 	for rows.Next() {
 		var (
 			id             string
@@ -344,6 +346,9 @@ func (r *DocumentEventRepository) ListByCaseFileID(ctx context.Context, caseFile
 			de.id,
 			de.document_id,
 			d.original_name,
+			cf.id,
+			cf.reference,
+			cf.title,
 			de.event_type,
 			de.event_date,
 			de.source_text,
@@ -362,6 +367,7 @@ func (r *DocumentEventRepository) ListByCaseFileID(ctx context.Context, caseFile
 			COALESCE(de.resolution_note, '')
 		FROM document_events de
 		INNER JOIN documents d ON d.id = de.document_id
+		INNER JOIN case_files cf ON cf.id = d.case_file_id
 		WHERE d.case_file_id = ?
 	`
 
@@ -374,54 +380,7 @@ func (r *DocumentEventRepository) ListByCaseFileID(ctx context.Context, caseFile
 
 	query += ` ORDER BY de.event_date ASC, de.id ASC`
 
-	rows, err := r.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	results := make([]querymodels.CaseFileEventResult, 0)
-	for rows.Next() {
-		var (
-			item           querymodels.CaseFileEventResult
-			isBusinessDays int
-			addExtraDay    int
-		)
-
-		if err := rows.Scan(
-			&item.EventID,
-			&item.DocumentID,
-			&item.OriginalName,
-			&item.EventType,
-			&item.EventDate,
-			&item.SourceText,
-			&item.AnchorDate,
-			&item.DateKind,
-			&item.AnchorSource,
-			&item.RelativeDays,
-			&isBusinessDays,
-			&addExtraDay,
-			&item.CalendarScope,
-			&item.TriggerText,
-			&item.Computation,
-			&item.ReviewStatus,
-			&item.ReviewedAt,
-			&item.ResolvedAt,
-			&item.ResolutionNote,
-		); err != nil {
-			return nil, err
-		}
-
-		item.IsBusinessDays = isBusinessDays == 1
-		item.AddExtraDay = addExtraDay == 1
-		results = append(results, item)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return results, nil
+	return r.scanCaseFileEventResults(ctx, query, args...)
 }
 
 func (r *DocumentEventRepository) ListUpcoming(ctx context.Context, fromDate string, caseFileID shared.ID, eventType string, reviewStatus string) ([]querymodels.CaseFileEventResult, error) {
@@ -430,6 +389,9 @@ func (r *DocumentEventRepository) ListUpcoming(ctx context.Context, fromDate str
 			de.id,
 			de.document_id,
 			d.original_name,
+			cf.id,
+			cf.reference,
+			cf.title,
 			de.event_type,
 			de.event_date,
 			de.source_text,
@@ -448,6 +410,7 @@ func (r *DocumentEventRepository) ListUpcoming(ctx context.Context, fromDate str
 			COALESCE(de.resolution_note, '')
 		FROM document_events de
 		INNER JOIN documents d ON d.id = de.document_id
+		INNER JOIN case_files cf ON cf.id = d.case_file_id
 		WHERE 1=1
 	`
 
@@ -475,6 +438,10 @@ func (r *DocumentEventRepository) ListUpcoming(ctx context.Context, fromDate str
 
 	query += ` ORDER BY de.event_date ASC, de.id ASC`
 
+	return r.scanCaseFileEventResults(ctx, query, args...)
+}
+
+func (r *DocumentEventRepository) scanCaseFileEventResults(ctx context.Context, query string, args ...any) ([]querymodels.CaseFileEventResult, error) {
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -482,6 +449,7 @@ func (r *DocumentEventRepository) ListUpcoming(ctx context.Context, fromDate str
 	defer rows.Close()
 
 	results := make([]querymodels.CaseFileEventResult, 0)
+
 	for rows.Next() {
 		var (
 			item           querymodels.CaseFileEventResult
@@ -493,6 +461,9 @@ func (r *DocumentEventRepository) ListUpcoming(ctx context.Context, fromDate str
 			&item.EventID,
 			&item.DocumentID,
 			&item.OriginalName,
+			&item.CaseFileID,
+			&item.CaseFileReference,
+			&item.CaseFileTitle,
 			&item.EventType,
 			&item.EventDate,
 			&item.SourceText,
@@ -515,6 +486,7 @@ func (r *DocumentEventRepository) ListUpcoming(ctx context.Context, fromDate str
 
 		item.IsBusinessDays = isBusinessDays == 1
 		item.AddExtraDay = addExtraDay == 1
+
 		results = append(results, item)
 	}
 
@@ -529,6 +501,7 @@ func nullIfBlank(value string) any {
 	if value == "" {
 		return nil
 	}
+
 	return value
 }
 
@@ -536,5 +509,49 @@ func emptyDefault(value, fallback string) string {
 	if value == "" {
 		return fallback
 	}
+
 	return value
+}
+
+func (r *DocumentEventRepository) GetDetailByID(ctx context.Context, eventID shared.ID) (querymodels.CaseFileEventResult, error) {
+	const query = `
+		SELECT
+			de.id,
+			de.document_id,
+			d.original_name,
+			cf.id,
+			cf.reference,
+			cf.title,
+			de.event_type,
+			de.event_date,
+			de.source_text,
+			COALESCE(de.anchor_date, ''),
+			COALESCE(de.date_kind, ''),
+			COALESCE(de.anchor_source, ''),
+			COALESCE(de.relative_days, 0),
+			COALESCE(de.is_business_days, 0),
+			COALESCE(de.add_extra_day, 0),
+			COALESCE(de.calendar_scope, 'madrid'),
+			COALESCE(de.trigger_text, ''),
+			COALESCE(de.computation, ''),
+			COALESCE(de.review_status, 'pending'),
+			COALESCE(de.reviewed_at, ''),
+			COALESCE(de.resolved_at, ''),
+			COALESCE(de.resolution_note, '')
+		FROM document_events de
+		INNER JOIN documents d ON d.id = de.document_id
+		INNER JOIN case_files cf ON cf.id = d.case_file_id
+		WHERE de.id = ?
+	`
+
+	results, err := r.scanCaseFileEventResults(ctx, query, eventID.String())
+	if err != nil {
+		return querymodels.CaseFileEventResult{}, err
+	}
+
+	if len(results) == 0 {
+		return querymodels.CaseFileEventResult{}, sql.ErrNoRows
+	}
+
+	return results[0], nil
 }
