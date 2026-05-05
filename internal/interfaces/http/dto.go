@@ -7,6 +7,7 @@ import (
 	domaincasefile "lexbox/internal/domain/casefile"
 	domaindocument "lexbox/internal/domain/document"
 	domainnote "lexbox/internal/domain/note"
+	"time"
 )
 
 type CaseFileResponse struct {
@@ -78,6 +79,10 @@ type DocumentResponse struct {
 	FileHash     string `json:"file_hash"`
 	CreatedAt    string `json:"created_at"`
 	UpdatedAt    string `json:"updated_at"`
+
+	ReviewStatus string `json:"review_status"`
+	ReviewedAt   string `json:"reviewed_at"`
+	ReviewNote   string `json:"review_note"`
 }
 
 type CaseFileDetailResponse struct {
@@ -191,19 +196,22 @@ func toNoteResponse(n domainnote.Note) NoteResponse {
 	}
 }
 
-func toDocumentResponse(d domaindocument.Document) DocumentResponse {
+func toDocumentResponse(doc domaindocument.Document) DocumentResponse {
 	return DocumentResponse{
-		ID:           d.ID.String(),
-		CaseFileID:   d.CaseFileID.String(),
-		OriginalName: d.OriginalName,
-		StoragePath:  d.StoragePath,
-		MimeType:     d.MimeType,
-		FileHash:     d.FileHash,
-		CreatedAt:    d.CreatedAt.Time().Format("2006-01-02T15:04:05Z07:00"),
-		UpdatedAt:    d.UpdatedAt.Time().Format("2006-01-02T15:04:05Z07:00"),
+		ID:           doc.ID.String(),
+		CaseFileID:   doc.CaseFileID.String(),
+		OriginalName: doc.OriginalName,
+		StoragePath:  doc.StoragePath,
+		MimeType:     doc.MimeType,
+		FileHash:     doc.FileHash,
+		CreatedAt:    doc.CreatedAt.Time().Format(time.RFC3339),
+		UpdatedAt:    doc.UpdatedAt.Time().Format(time.RFC3339),
+
+		ReviewStatus: doc.ReviewStatus,
+		ReviewedAt:   doc.ReviewedAt,
+		ReviewNote:   doc.ReviewNote,
 	}
 }
-
 func toCaseFileDetailResponse(in casefileapp.CaseFileDetail) CaseFileDetailResponse {
 	notes := make([]NoteResponse, 0, len(in.Notes))
 	for _, n := range in.Notes {

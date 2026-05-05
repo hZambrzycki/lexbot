@@ -1,9 +1,11 @@
-import {
+import type {
   CaseFile,
   CaseFileDetail,
   CreateCaseFileInput,
   Dashboard,
   DocumentDetail,
+  DocumentReviewResponse,
+  DocumentReviewStatus,
   EventActionResponse,
   EventItem,
 } from "@/lib/types";
@@ -33,7 +35,9 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
       if (data?.error) {
         message = data.error;
       }
-    } catch {}
+    } catch {
+      // ignore non-json error body
+    }
 
     throw new Error(message);
   }
@@ -194,7 +198,9 @@ export async function importCaseFileDocument(
       if (data?.error) {
         message = data.error;
       }
-    } catch {}
+    } catch {
+      // ignore non-json error body
+    }
 
     throw new Error(message);
   }
@@ -235,5 +241,19 @@ export async function reprocessDocument(
 ): Promise<ReprocessDocumentResponse> {
   return apiFetch<ReprocessDocumentResponse>(`/documents/${id}/reprocess`, {
     method: "POST",
+  });
+}
+
+export async function reviewDocument(
+  id: string,
+  reviewStatus: DocumentReviewStatus,
+  reviewNote = "",
+): Promise<DocumentReviewResponse> {
+  return apiFetch<DocumentReviewResponse>(`/documents/${id}/review`, {
+    method: "POST",
+    body: JSON.stringify({
+      review_status: reviewStatus,
+      review_note: reviewNote,
+    }),
   });
 }

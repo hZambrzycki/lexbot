@@ -45,7 +45,9 @@ func main() {
 		GetDocumentDetail: appServices.GetDocumentDetail,
 		DeleteDocument:    appServices.DeleteDocument,
 		ReprocessDocument: appServices.ReprocessDocument,
+		ReviewDocument:    appServices.ReviewDocument,
 	}
+
 	server.RegisterRoutes(caseFileHandler.Register)
 	server.RegisterRoutes(eventHandler.Register)
 	server.RegisterRoutes(documentHandler.Register)

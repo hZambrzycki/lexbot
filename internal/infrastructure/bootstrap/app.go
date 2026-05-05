@@ -33,7 +33,7 @@ type App struct {
 	ImportDocument             documentapp.ImportDocument
 	ListDocumentsByCaseFile    documentapp.ListDocumentsByCaseFile
 	DeleteDocument             documentapp.DeleteDocument
-	UpdateDocumentReviewState  documentapp.UpdateDocumentReviewState
+	ReviewDocument             documentapp.ReviewDocument
 	ExtractDocumentText        documentapp.ExtractDocumentText
 	SearchDocuments            documentapp.SearchDocuments
 	GetDocumentDetail          documentapp.GetDocumentDetail
@@ -263,7 +263,7 @@ func BuildApp(ctx context.Context) (*App, error) {
 			Documents: documentRepo,
 			Storage:   storage,
 		},
-		UpdateDocumentReviewState: documentapp.UpdateDocumentReviewState{
+		ReviewDocument: documentapp.ReviewDocument{
 			Documents: documentRepo,
 		},
 		ExtractDocumentText: extractDocumentText,

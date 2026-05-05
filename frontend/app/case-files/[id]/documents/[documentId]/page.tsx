@@ -2,7 +2,8 @@ import Link from "next/link";
 import { getDocument } from "@/lib/api";
 import { DeleteDocumentButton } from "./delete-document-button";
 import { ReprocessDocumentButton } from "./reprocess-document-button";
-
+import { DocumentReviewBadge } from "./document-review-badge";
+import { DocumentReviewActions } from "./document-review-actions";
 
 type Props = {
   params: Promise<{
@@ -128,14 +129,18 @@ export default async function DocumentDetailPage({ params }: Props) {
           ← Volver al expediente
         </Link>
 
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-neutral-50">
-            {doc.original_name}
-          </h1>
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight text-neutral-50">
+              {doc.original_name}
+            </h1>
 
-          <p className="mt-2 text-sm text-neutral-400">
-            Documento del expediente · {displayMimeType(doc.mime_type)}
-          </p>
+            <p className="mt-2 text-sm text-neutral-400">
+              Documento del expediente · {displayMimeType(doc.mime_type)}
+            </p>
+          </div>
+
+          <DocumentReviewBadge status={doc.review_status} />
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -150,12 +155,36 @@ export default async function DocumentDetailPage({ params }: Props) {
           <span className="rounded-full border border-neutral-700 bg-neutral-900 px-3 py-1 text-xs font-medium text-neutral-300">
             Eventos detectados: {detail.events.length}
           </span>
+
+          {doc.reviewed_at ? (
+            <span className="rounded-full border border-neutral-700 bg-neutral-900 px-3 py-1 text-xs font-medium text-neutral-300">
+              Revisado: {new Date(doc.reviewed_at).toLocaleString("es-ES")}
+            </span>
+          ) : null}
         </div>
-        
-        <div className="flex gap-3">
-        <DeleteDocumentButton documentId={doc.id} caseFileId={id} />
-        <ReprocessDocumentButton documentId={doc.id} />
+
+        {doc.review_note ? (
+          <div className="rounded-2xl border border-neutral-800 bg-neutral-950/70 p-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+              Nota de revisión documental
+            </p>
+
+            <p className="mt-2 text-sm leading-6 text-neutral-300">
+              {doc.review_note}
+            </p>
+          </div>
+        ) : null}
+
+        <div className="flex flex-wrap gap-3">
+          <DeleteDocumentButton documentId={doc.id} caseFileId={id} />
+          <ReprocessDocumentButton documentId={doc.id} />
         </div>
+
+        <DocumentReviewActions
+          documentId={doc.id}
+          reviewStatus={doc.review_status}
+          reviewNote={doc.review_note}
+        />
       </section>
 
       <section className="grid gap-5 md:grid-cols-3">
@@ -246,9 +275,7 @@ export default async function DocumentDetailPage({ params }: Props) {
                     Cómputo:{" "}
                     {event.is_business_days ? "días hábiles" : "días naturales"}
                   </div>
-                  <div>
-                    Día adicional: {event.add_extra_day ? "sí" : "no"}
-                  </div>
+                  <div>Día adicional: {event.add_extra_day ? "sí" : "no"}</div>
                   <div className="md:col-span-2">
                     Regla: {event.computation || "—"}
                   </div>

@@ -7,11 +7,15 @@ import (
 	documentapp "lexbox/internal/application/document"
 )
 
+type reviewDocumentRequest struct {
+	ReviewStatus string `json:"review_status"`
+	ReviewNote   string `json:"review_note"`
+}
 type DocumentHandler struct {
-	GetDocumentDetail         documentapp.GetDocumentDetail
-	DeleteDocument            documentapp.DeleteDocument
-	ReprocessDocument         documentapp.ReprocessDocument
-	UpdateDocumentReviewState documentapp.UpdateDocumentReviewState
+	GetDocumentDetail documentapp.GetDocumentDetail
+	DeleteDocument    documentapp.DeleteDocument
+	ReprocessDocument documentapp.ReprocessDocument
+	ReviewDocument    documentapp.ReviewDocument
 }
 
 func (h DocumentHandler) Register(mux *http.ServeMux) {
@@ -113,26 +117,28 @@ func (h DocumentHandler) handleReprocessDocument(w http.ResponseWriter, r *http.
 }
 
 func (h DocumentHandler) handleReviewDocument(w http.ResponseWriter, r *http.Request, documentID string) {
-	var body struct {
-		ReviewStatus string `json:"review_status"`
-		ReviewNote   string `json:"review_note"`
-	}
+	var body reviewDocumentRequest
 
 	if err := readJSON(r, &body); err != nil {
-		writeError(w, err)
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "invalid json body",
+		})
 		return
 	}
 
-	result, err := h.UpdateDocumentReviewState.Execute(
+	result, err := h.ReviewDocument.Execute(
 		r.Context(),
-		documentapp.UpdateDocumentReviewStateInput{
+		documentapp.ReviewDocumentInput{
 			DocumentID:   documentID,
 			ReviewStatus: body.ReviewStatus,
 			ReviewNote:   body.ReviewNote,
 		},
 	)
+
 	if err != nil {
-		writeError(w, err)
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": err.Error(),
+		})
 		return
 	}
 

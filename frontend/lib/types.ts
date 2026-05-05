@@ -21,6 +21,15 @@ export type Note = {
   updated_at: string;
 };
 
+export type DocumentReviewStatus = "pending_review" | "reviewed" | "error";
+
+export type DocumentReviewResponse = {
+  document_id: string;
+  review_status: DocumentReviewStatus;
+  reviewed_at: string;
+  review_note: string;
+};
+
 export type DocumentItem = {
   id: string;
   case_file_id: string;
@@ -30,6 +39,10 @@ export type DocumentItem = {
   file_hash: string;
   created_at: string;
   updated_at: string;
+
+  review_status: DocumentReviewStatus;
+  reviewed_at?: string;
+  review_note?: string;
 };
 
 export type EventItem = {

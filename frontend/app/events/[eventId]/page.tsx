@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { EventActions } from "@/app/components/event-actions";
 import { getEvent } from "@/lib/api";
+import type { EventItem } from "@/lib/types";
 
 type Props = {
   params: Promise<{
@@ -126,9 +128,24 @@ function displayDocumentName(value?: string) {
   }
 }
 
+async function loadEventOrNotFound(eventId: string): Promise<EventItem> {
+  try {
+    return await getEvent(eventId);
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message.includes("sql: no rows in result set")
+    ) {
+      notFound();
+    }
+
+    throw error;
+  }
+}
+
 export default async function EventPage({ params }: Props) {
   const { eventId } = await params;
-  const event = await getEvent(eventId);
+  const event = await loadEventOrNotFound(eventId);
 
   return (
     <main className="mx-auto max-w-5xl space-y-6 p-6">
@@ -173,7 +190,11 @@ export default async function EventPage({ params }: Props) {
           {label(event.event_type)} · {formatDate(event.event_date)}
         </h1>
 
-        <p className={`mt-2 text-sm font-medium ${temporalColor(event.event_date)}`}>
+        <p
+          className={`mt-2 text-sm font-medium ${temporalColor(
+            event.event_date,
+          )}`}
+        >
           {temporalStatus(event.event_date)}
         </p>
 
@@ -227,7 +248,9 @@ export default async function EventPage({ params }: Props) {
           <p className="text-xs uppercase tracking-wide text-neutral-500">
             Fecha base
           </p>
-          <p className="mt-1 text-neutral-200">{formatDate(event.anchor_date)}</p>
+          <p className="mt-1 text-neutral-200">
+            {formatDate(event.anchor_date)}
+          </p>
         </div>
 
         <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-4">
