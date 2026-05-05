@@ -4,10 +4,13 @@ import type {
   CreateCaseFileInput,
   Dashboard,
   DocumentDetail,
+  DocumentItem,
   DocumentReviewResponse,
   DocumentReviewStatus,
   EventActionResponse,
   EventItem,
+  Note,
+  DocumentSearchResult,
 } from "@/lib/types";
 
 const API_BASE_URL =
@@ -55,6 +58,24 @@ export function getGlobalUpcomingICSUrl(params?: { type?: string }): string {
   const query = searchParams.toString();
 
   return buildApiUrl(`/events/upcoming.ics${query ? `?${query}` : ""}`);
+}
+
+export async function deleteNote(caseFileId: string, noteId: string) {
+  return apiFetch<{ id: string; deleted: boolean }>(
+    `/case-files/${caseFileId}/notes/${noteId}`,
+    {
+      method: "DELETE",
+    },
+  );
+}
+export async function createNote(caseFileId: string, input: {
+  title: string;
+  content: string;
+}) {
+  return apiFetch<Note>(`/case-files/${caseFileId}/notes`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
 export function getCaseFileUpcomingICSUrl(
@@ -158,16 +179,7 @@ export async function getUpcomingEvents(params?: {
 }
 
 export type ImportDocumentResponse = {
-  document: {
-    id: string;
-    case_file_id: string;
-    original_name: string;
-    storage_path: string;
-    mime_type: string;
-    file_hash: string;
-    created_at: string;
-    updated_at: string;
-  };
+  document: DocumentItem;
   text_extracted: boolean;
   metadata_analyzed: boolean;
   events_analyzed: boolean;
@@ -256,4 +268,18 @@ export async function reviewDocument(
       review_note: reviewNote,
     }),
   });
+}
+
+export async function searchDocuments(
+  caseFileId: string,
+  query: string,
+): Promise<DocumentSearchResult[]> {
+  const params = new URLSearchParams();
+
+  params.set("case_file_id", caseFileId);
+  params.set("q", query);
+
+  return apiFetch<DocumentSearchResult[]>(
+    `/documents/search?${params.toString()}`,
+  );
 }

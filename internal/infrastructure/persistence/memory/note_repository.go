@@ -40,3 +40,11 @@ func (r *NoteRepository) ListByCaseFileID(ctx context.Context, caseFileID shared
 
 	return result, nil
 }
+
+func (r *NoteRepository) Delete(ctx context.Context, id shared.ID) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	delete(r.storage, id)
+	return nil
+}

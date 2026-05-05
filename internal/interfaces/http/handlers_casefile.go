@@ -10,8 +10,18 @@ import (
 
 	casefileapp "lexbox/internal/application/casefile"
 	documentapp "lexbox/internal/application/document"
+	noteapp "lexbox/internal/application/note"
 	"lexbox/internal/domain/casefile"
 )
+
+const maxUploadFileSize = 20 << 20 // 20 MB
+
+var allowedUploadExtensions = map[string]string{
+	".txt":  "text/plain",
+	".md":   "text/markdown",
+	".pdf":  "application/pdf",
+	".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
 
 type CaseFileHandler struct {
 	CreateCaseFile       casefileapp.CreateCaseFile
@@ -19,6 +29,8 @@ type CaseFileHandler struct {
 	GetCaseFileDetail    casefileapp.GetCaseFileDetail
 	GetCaseFileDashboard casefileapp.GetCaseFileDashboard
 	ImportDocument       documentapp.ImportDocument
+	AddNote              noteapp.AddNote
+	DeleteNote           noteapp.DeleteNote
 	EventHandler         EventHandler
 }
 
@@ -30,6 +42,11 @@ type createCaseFileRequest struct {
 	Description       string `json:"description"`
 	CalendarScope     string `json:"calendar_scope"`
 	AugustNonBusiness bool   `json:"august_non_business"`
+}
+
+type createNoteRequest struct {
+	Title   string `json:"title"`
+	Content string `json:"content"`
 }
 
 func (h CaseFileHandler) Register(mux *http.ServeMux) {
@@ -74,6 +91,15 @@ func (h CaseFileHandler) Register(mux *http.ServeMux) {
 
 		if len(parts) == 2 && parts[1] == "documents" {
 			h.handleImportDocument(w, r, id)
+			return
+		}
+
+		if len(parts) == 2 && parts[1] == "notes" {
+			h.handleCreateNote(w, r, id)
+			return
+		}
+		if len(parts) == 3 && parts[1] == "notes" {
+			h.handleDeleteNote(w, r, parts[2])
 			return
 		}
 
@@ -174,15 +200,61 @@ func (h CaseFileHandler) handleDashboard(w http.ResponseWriter, r *http.Request,
 	writeJSON(w, http.StatusOK, toDashboardResponse(result))
 }
 
+func (h CaseFileHandler) handleCreateNote(w http.ResponseWriter, r *http.Request, caseFileID string) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, http.MethodPost)
+		return
+	}
+
+	var req createNoteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "invalid json body",
+		})
+		return
+	}
+
+	result, err := h.AddNote.Execute(r.Context(), noteapp.AddNoteInput{
+		CaseFileID: strings.TrimSpace(caseFileID),
+		Title:      strings.TrimSpace(req.Title),
+		Content:    strings.TrimSpace(req.Content),
+	})
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, toNoteResponse(result))
+}
+
+func (h CaseFileHandler) handleDeleteNote(w http.ResponseWriter, r *http.Request, noteID string) {
+	if r.Method != http.MethodDelete {
+		writeMethodNotAllowed(w, http.MethodDelete)
+		return
+	}
+
+	result, err := h.DeleteNote.Execute(r.Context(), noteapp.DeleteNoteInput{
+		ID: strings.TrimSpace(noteID),
+	})
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
 func (h CaseFileHandler) handleImportDocument(w http.ResponseWriter, r *http.Request, caseFileID string) {
 	if r.Method != http.MethodPost {
 		writeMethodNotAllowed(w, http.MethodPost)
 		return
 	}
 
-	if err := r.ParseMultipartForm(64 << 20); err != nil {
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadFileSize+1024*1024)
+
+	if err := r.ParseMultipartForm(maxUploadFileSize); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
-			"error": "invalid multipart form",
+			"error": "El formulario no es válido o el archivo supera el tamaño máximo permitido.",
 		})
 		return
 	}
@@ -190,11 +262,42 @@ func (h CaseFileHandler) handleImportDocument(w http.ResponseWriter, r *http.Req
 	file, header, err := r.FormFile("file")
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
-			"error": "missing file field",
+			"error": "Falta el campo file.",
 		})
 		return
 	}
 	defer file.Close()
+
+	originalName := filepath.Base(header.Filename)
+	if strings.TrimSpace(originalName) == "" || originalName == "." {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "El archivo debe tener un nombre válido.",
+		})
+		return
+	}
+
+	extension := strings.ToLower(filepath.Ext(originalName))
+	defaultMimeType, ok := allowedUploadExtensions[extension]
+	if !ok {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "Formato no permitido. Sube un documento TXT, MD, PDF o DOCX.",
+		})
+		return
+	}
+
+	if header.Size <= 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "El archivo está vacío.",
+		})
+		return
+	}
+
+	if header.Size > maxUploadFileSize {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "El archivo es demasiado grande. Máximo 20 MB.",
+		})
+		return
+	}
 
 	tmpDir, err := os.MkdirTemp("", "lexbox-upload-*")
 	if err != nil {
@@ -202,11 +305,6 @@ func (h CaseFileHandler) handleImportDocument(w http.ResponseWriter, r *http.Req
 		return
 	}
 	defer os.RemoveAll(tmpDir)
-
-	originalName := filepath.Base(header.Filename)
-	if strings.TrimSpace(originalName) == "" || originalName == "." {
-		originalName = "documento"
-	}
 
 	tmpPath := filepath.Join(tmpDir, originalName)
 
@@ -216,7 +314,8 @@ func (h CaseFileHandler) handleImportDocument(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if _, err := io.Copy(tmp, file); err != nil {
+	written, err := io.Copy(tmp, io.LimitReader(file, maxUploadFileSize+1))
+	if err != nil {
 		_ = tmp.Close()
 		writeError(w, err)
 		return
@@ -227,12 +326,29 @@ func (h CaseFileHandler) handleImportDocument(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	mimeType := header.Header.Get("Content-Type")
+	if written <= 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "El archivo está vacío.",
+		})
+		return
+	}
+
+	if written > maxUploadFileSize {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "El archivo es demasiado grande. Máximo 20 MB.",
+		})
+		return
+	}
+
+	mimeType := strings.TrimSpace(header.Header.Get("Content-Type"))
+	if mimeType == "" || mimeType == "application/octet-stream" {
+		mimeType = defaultMimeType
+	}
 
 	result, err := h.ImportDocument.Execute(r.Context(), documentapp.ImportDocumentInput{
 		CaseFileID: strings.TrimSpace(caseFileID),
 		SourcePath: tmpPath,
-		MimeType:   strings.TrimSpace(mimeType),
+		MimeType:   mimeType,
 	})
 	if err != nil {
 		writeError(w, err)

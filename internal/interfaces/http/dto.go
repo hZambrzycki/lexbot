@@ -33,6 +33,34 @@ type NoteResponse struct {
 	UpdatedAt  string `json:"updated_at"`
 }
 
+type DocumentResponse struct {
+	ID           string `json:"id"`
+	CaseFileID   string `json:"case_file_id"`
+	OriginalName string `json:"original_name"`
+	StoragePath  string `json:"storage_path"`
+	MimeType     string `json:"mime_type"`
+	FileHash     string `json:"file_hash"`
+	CreatedAt    string `json:"created_at"`
+	UpdatedAt    string `json:"updated_at"`
+
+	ReviewStatus string `json:"review_status"`
+	ReviewedAt   string `json:"reviewed_at"`
+	ReviewNote   string `json:"review_note"`
+}
+
+type DocumentSummaryResponse struct {
+	Document DocumentResponse `json:"document"`
+
+	HasExtractedText bool `json:"has_extracted_text"`
+	HasMetadata      bool `json:"has_metadata"`
+	HasEvents        bool `json:"has_events"`
+
+	DocumentType string `json:"document_type"`
+	LegalArea    string `json:"legal_area"`
+
+	EventCount int `json:"event_count"`
+}
+
 type DocumentDetailResponse struct {
 	Document             DocumentResponse      `json:"document"`
 	FileExists           bool                  `json:"file_exists"`
@@ -70,25 +98,10 @@ type DocumentEventDetail struct {
 	ResolutionNote string `json:"resolution_note,omitempty"`
 }
 
-type DocumentResponse struct {
-	ID           string `json:"id"`
-	CaseFileID   string `json:"case_file_id"`
-	OriginalName string `json:"original_name"`
-	StoragePath  string `json:"storage_path"`
-	MimeType     string `json:"mime_type"`
-	FileHash     string `json:"file_hash"`
-	CreatedAt    string `json:"created_at"`
-	UpdatedAt    string `json:"updated_at"`
-
-	ReviewStatus string `json:"review_status"`
-	ReviewedAt   string `json:"reviewed_at"`
-	ReviewNote   string `json:"review_note"`
-}
-
 type CaseFileDetailResponse struct {
-	CaseFile  CaseFileResponse   `json:"case_file"`
-	Notes     []NoteResponse     `json:"notes"`
-	Documents []DocumentResponse `json:"documents"`
+	CaseFile  CaseFileResponse          `json:"case_file"`
+	Notes     []NoteResponse            `json:"notes"`
+	Documents []DocumentSummaryResponse `json:"documents"`
 }
 
 type EventResponse struct {
@@ -169,6 +182,13 @@ type DashboardResponse struct {
 	ProceduralHint                   string           `json:"procedural_hint"`
 }
 
+type SearchDocumentResultResponse struct {
+	DocumentID   string `json:"document_id"`
+	OriginalName string `json:"original_name"`
+	CaseFileID   string `json:"case_file_id"`
+	Snippet      string `json:"snippet"`
+}
+
 func toCaseFileResponse(cf domaincasefile.CaseFile) CaseFileResponse {
 	return CaseFileResponse{
 		ID:                cf.ID.String(),
@@ -180,8 +200,8 @@ func toCaseFileResponse(cf domaincasefile.CaseFile) CaseFileResponse {
 		Description:       cf.Description,
 		CalendarScope:     cf.CalendarScope,
 		AugustNonBusiness: cf.AugustNonBusiness,
-		CreatedAt:         cf.CreatedAt.Time().Format("2006-01-02T15:04:05Z07:00"),
-		UpdatedAt:         cf.UpdatedAt.Time().Format("2006-01-02T15:04:05Z07:00"),
+		CreatedAt:         cf.CreatedAt.Time().Format(time.RFC3339),
+		UpdatedAt:         cf.UpdatedAt.Time().Format(time.RFC3339),
 	}
 }
 
@@ -191,8 +211,8 @@ func toNoteResponse(n domainnote.Note) NoteResponse {
 		CaseFileID: n.CaseFileID.String(),
 		Title:      n.Title,
 		Content:    n.Content,
-		CreatedAt:  n.CreatedAt.Time().Format("2006-01-02T15:04:05Z07:00"),
-		UpdatedAt:  n.UpdatedAt.Time().Format("2006-01-02T15:04:05Z07:00"),
+		CreatedAt:  n.CreatedAt.Time().Format(time.RFC3339),
+		UpdatedAt:  n.UpdatedAt.Time().Format(time.RFC3339),
 	}
 }
 
@@ -206,21 +226,48 @@ func toDocumentResponse(doc domaindocument.Document) DocumentResponse {
 		FileHash:     doc.FileHash,
 		CreatedAt:    doc.CreatedAt.Time().Format(time.RFC3339),
 		UpdatedAt:    doc.UpdatedAt.Time().Format(time.RFC3339),
-
 		ReviewStatus: doc.ReviewStatus,
 		ReviewedAt:   doc.ReviewedAt,
 		ReviewNote:   doc.ReviewNote,
 	}
 }
+
+func toSearchDocumentResultsResponse(items []querymodels.SearchDocumentResult) []SearchDocumentResultResponse {
+	out := make([]SearchDocumentResultResponse, 0, len(items))
+
+	for _, item := range items {
+		out = append(out, SearchDocumentResultResponse{
+			DocumentID:   item.DocumentID,
+			OriginalName: item.OriginalName,
+			CaseFileID:   item.CaseFileID,
+			Snippet:      item.Snippet,
+		})
+	}
+
+	return out
+}
+
+func toDocumentSummaryResponse(summary casefileapp.DocumentSummary) DocumentSummaryResponse {
+	return DocumentSummaryResponse{
+		Document:         toDocumentResponse(summary.Document),
+		HasExtractedText: summary.HasExtractedText,
+		HasMetadata:      summary.HasMetadata,
+		HasEvents:        summary.HasEvents,
+		DocumentType:     summary.DocumentType,
+		LegalArea:        summary.LegalArea,
+		EventCount:       summary.EventCount,
+	}
+}
+
 func toCaseFileDetailResponse(in casefileapp.CaseFileDetail) CaseFileDetailResponse {
 	notes := make([]NoteResponse, 0, len(in.Notes))
 	for _, n := range in.Notes {
 		notes = append(notes, toNoteResponse(n))
 	}
 
-	documents := make([]DocumentResponse, 0, len(in.Documents))
+	documents := make([]DocumentSummaryResponse, 0, len(in.Documents))
 	for _, d := range in.Documents {
-		documents = append(documents, toDocumentResponse(d))
+		documents = append(documents, toDocumentSummaryResponse(d))
 	}
 
 	return CaseFileDetailResponse{
@@ -240,30 +287,28 @@ func toCaseFileListResponse(items []domaincasefile.CaseFile) []CaseFileResponse 
 
 func toCaseFileEventResponse(e querymodels.CaseFileEventResult) EventResponse {
 	return EventResponse{
-		EventID:      e.EventID,
-		DocumentID:   e.DocumentID,
-		OriginalName: e.OriginalName,
-
+		EventID:           e.EventID,
+		DocumentID:        e.DocumentID,
+		OriginalName:      e.OriginalName,
 		CaseFileID:        e.CaseFileID,
 		CaseFileReference: e.CaseFileReference,
 		CaseFileTitle:     e.CaseFileTitle,
-
-		EventType:      e.EventType,
-		EventDate:      e.EventDate,
-		SourceText:     e.SourceText,
-		AnchorDate:     e.AnchorDate,
-		DateKind:       e.DateKind,
-		AnchorSource:   e.AnchorSource,
-		RelativeDays:   e.RelativeDays,
-		IsBusinessDays: e.IsBusinessDays,
-		AddExtraDay:    e.AddExtraDay,
-		CalendarScope:  e.CalendarScope,
-		TriggerText:    e.TriggerText,
-		Computation:    e.Computation,
-		ReviewStatus:   e.ReviewStatus,
-		ReviewedAt:     e.ReviewedAt,
-		ResolvedAt:     e.ResolvedAt,
-		ResolutionNote: e.ResolutionNote,
+		EventType:         e.EventType,
+		EventDate:         e.EventDate,
+		SourceText:        e.SourceText,
+		AnchorDate:        e.AnchorDate,
+		DateKind:          e.DateKind,
+		AnchorSource:      e.AnchorSource,
+		RelativeDays:      e.RelativeDays,
+		IsBusinessDays:    e.IsBusinessDays,
+		AddExtraDay:       e.AddExtraDay,
+		CalendarScope:     e.CalendarScope,
+		TriggerText:       e.TriggerText,
+		Computation:       e.Computation,
+		ReviewStatus:      e.ReviewStatus,
+		ReviewedAt:        e.ReviewedAt,
+		ResolvedAt:        e.ResolvedAt,
+		ResolutionNote:    e.ResolutionNote,
 	}
 }
 
@@ -277,36 +322,34 @@ func toCaseFileEventsResponse(items []querymodels.CaseFileEventResult) []EventRe
 
 func toUpcomingEventResponse(e documentapp.UpcomingEvent) EventResponse {
 	return EventResponse{
-		EventID:      e.EventID,
-		DocumentID:   e.DocumentID,
-		OriginalName: e.OriginalName,
-
+		EventID:           e.EventID,
+		DocumentID:        e.DocumentID,
+		OriginalName:      e.OriginalName,
 		CaseFileID:        e.CaseFileID,
 		CaseFileReference: e.CaseFileReference,
 		CaseFileTitle:     e.CaseFileTitle,
-
-		EventType:      e.EventType,
-		EventDate:      e.EventDate,
-		SourceText:     e.SourceText,
-		DaysRemaining:  e.DaysRemaining,
-		Status:         e.Status,
-		Priority:       e.Priority,
-		DuplicateCount: e.DuplicateCount,
-		DocumentNames:  e.DocumentNames,
-		DocumentIDs:    e.DocumentIDs,
-		AnchorDate:     e.AnchorDate,
-		DateKind:       e.DateKind,
-		AnchorSource:   e.AnchorSource,
-		RelativeDays:   e.RelativeDays,
-		IsBusinessDays: e.IsBusinessDays,
-		AddExtraDay:    e.AddExtraDay,
-		CalendarScope:  e.CalendarScope,
-		TriggerText:    e.TriggerText,
-		Computation:    e.Computation,
-		ReviewStatus:   e.ReviewStatus,
-		ReviewedAt:     e.ReviewedAt,
-		ResolvedAt:     e.ResolvedAt,
-		ResolutionNote: e.ResolutionNote,
+		EventType:         e.EventType,
+		EventDate:         e.EventDate,
+		SourceText:        e.SourceText,
+		DaysRemaining:     e.DaysRemaining,
+		Status:            e.Status,
+		Priority:          e.Priority,
+		DuplicateCount:    e.DuplicateCount,
+		DocumentNames:     e.DocumentNames,
+		DocumentIDs:       e.DocumentIDs,
+		AnchorDate:        e.AnchorDate,
+		DateKind:          e.DateKind,
+		AnchorSource:      e.AnchorSource,
+		RelativeDays:      e.RelativeDays,
+		IsBusinessDays:    e.IsBusinessDays,
+		AddExtraDay:       e.AddExtraDay,
+		CalendarScope:     e.CalendarScope,
+		TriggerText:       e.TriggerText,
+		Computation:       e.Computation,
+		ReviewStatus:      e.ReviewStatus,
+		ReviewedAt:        e.ReviewedAt,
+		ResolvedAt:        e.ResolvedAt,
+		ResolutionNote:    e.ResolutionNote,
 	}
 }
 

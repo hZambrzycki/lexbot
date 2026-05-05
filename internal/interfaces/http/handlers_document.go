@@ -16,9 +16,18 @@ type DocumentHandler struct {
 	DeleteDocument    documentapp.DeleteDocument
 	ReprocessDocument documentapp.ReprocessDocument
 	ReviewDocument    documentapp.ReviewDocument
+	SearchDocuments   documentapp.SearchDocuments
 }
 
 func (h DocumentHandler) Register(mux *http.ServeMux) {
+	mux.HandleFunc("/documents/search", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowed(w, http.MethodGet)
+			return
+		}
+
+		h.handleSearchDocuments(w, r)
+	})
 	mux.HandleFunc("/documents/", func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/documents/")
 		parts := strings.Split(path, "/")
@@ -143,4 +152,21 @@ func (h DocumentHandler) handleReviewDocument(w http.ResponseWriter, r *http.Req
 	}
 
 	writeJSON(w, http.StatusOK, result)
+}
+
+func (h DocumentHandler) handleSearchDocuments(w http.ResponseWriter, r *http.Request) {
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	caseFileID := strings.TrimSpace(r.URL.Query().Get("case_file_id"))
+
+	result, err := h.SearchDocuments.Execute(r.Context(), documentapp.SearchDocumentsInput{
+		Query:      query,
+		CaseFileID: caseFileID,
+		Limit:      20,
+	})
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, toSearchDocumentResultsResponse(result))
 }

@@ -28,6 +28,7 @@ type App struct {
 	ListCaseFilesByClient      casefileapp.ListCaseFilesByClient
 	GetCaseFileDashboard       casefileapp.GetCaseFileDashboard
 	AddNote                    noteapp.AddNote
+	DeleteNote                 noteapp.DeleteNote
 	ListNotesByCaseFile        noteapp.ListNotesByCaseFile
 	AttachDocument             documentapp.AttachDocument
 	ImportDocument             documentapp.ImportDocument
@@ -178,9 +179,12 @@ func BuildApp(ctx context.Context) (*App, error) {
 	}
 
 	getCaseFileDetail := casefileapp.GetCaseFileDetail{
-		CaseFiles: caseFileRepo,
-		Notes:     noteRepo,
-		Documents: documentRepo,
+		CaseFiles:        caseFileRepo,
+		Notes:            noteRepo,
+		Documents:        documentRepo,
+		DocumentContents: documentContentRepo,
+		Metadata:         documentMetadataRepo,
+		Events:           documentEventRepo,
 	}
 
 	getCaseFileDashboard := casefileapp.GetCaseFileDashboard{
@@ -231,6 +235,10 @@ func BuildApp(ctx context.Context) (*App, error) {
 			Notes:     noteRepo,
 			CaseFiles: caseFileRepo,
 			IDs:       idGenerator,
+		},
+
+		DeleteNote: noteapp.DeleteNote{
+			Notes: noteRepo,
 		},
 
 		ListNotesByCaseFile: noteapp.ListNotesByCaseFile{

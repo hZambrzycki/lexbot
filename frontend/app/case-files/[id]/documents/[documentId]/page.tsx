@@ -2,8 +2,13 @@ import Link from "next/link";
 import { getDocument } from "@/lib/api";
 import { DeleteDocumentButton } from "./delete-document-button";
 import { ReprocessDocumentButton } from "./reprocess-document-button";
-import { DocumentReviewBadge } from "./document-review-badge";
-import { DocumentReviewActions } from "./document-review-actions";
+import { DocumentReviewBadge } from "@/app/components/document-review-badge";
+import { DocumentReviewActions } from "@/app/components/document-review-actions";
+import {
+  displayDocumentType,
+  displayLegalArea,
+  displayMimeType,
+} from "@/lib/document-display";
 
 type Props = {
   params: Promise<{
@@ -41,65 +46,6 @@ function displayReviewStatus(value: string) {
       return "Resuelto";
     default:
       return value || "Sin estado";
-  }
-}
-
-function displayMimeType(value: string) {
-  switch (value) {
-    case "text/plain":
-      return "Texto plano";
-    case "application/pdf":
-      return "PDF";
-    case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-      return "Word";
-    default:
-      return value || "Sin tipo";
-  }
-}
-
-function displayDocumentType(value: string) {
-  switch (value) {
-    case "order":
-      return "Resolución / acto procesal";
-    case "claim":
-      return "Demanda / reclamación";
-    case "contract":
-      return "Contrato";
-    case "notice":
-      return "Notificación";
-    case "evidence":
-      return "Documento probatorio";
-    case "unknown":
-    case "":
-      return "Sin clasificar";
-    default:
-      return value;
-  }
-}
-
-function displayLegalArea(value: string) {
-  switch (value) {
-    case "procedural":
-      return "Procesal";
-    case "civil":
-      return "Civil";
-    case "labor":
-    case "laboral":
-      return "Laboral";
-    case "administrative":
-    case "administrativo":
-      return "Administrativo";
-    case "immigration":
-    case "extranjeria":
-      return "Extranjería";
-    case "commercial":
-    case "mercantil":
-      return "Mercantil";
-    case "unknown":
-    case "":
-      return "Sin clasificar";
-    default:
-      return value;
   }
 }
 
@@ -145,7 +91,8 @@ export default async function DocumentDetailPage({ params }: Props) {
 
         <div className="flex flex-wrap gap-2">
           <span className="rounded-full border border-neutral-700 bg-neutral-900 px-3 py-1 text-xs font-medium text-neutral-300">
-            Archivo físico: {detail.file_exists ? "localizado" : "no localizado"}
+            Archivo físico:{" "}
+            {detail.file_exists ? "localizado" : "no localizado"}
           </span>
 
           <span className="rounded-full border border-neutral-700 bg-neutral-900 px-3 py-1 text-xs font-medium text-neutral-300">
@@ -175,16 +122,47 @@ export default async function DocumentDetailPage({ params }: Props) {
           </div>
         ) : null}
 
-        <div className="flex flex-wrap gap-3">
-          <DeleteDocumentButton documentId={doc.id} caseFileId={id} />
-          <ReprocessDocumentButton documentId={doc.id} />
-        </div>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <section className="rounded-2xl border border-neutral-800 bg-neutral-950/70 p-5">
+            <h2 className="text-base font-semibold text-neutral-50">
+              Acciones del documento
+            </h2>
 
-        <DocumentReviewActions
-          documentId={doc.id}
-          reviewStatus={doc.review_status}
-          reviewNote={doc.review_note}
-        />
+            <p className="mt-1 text-sm leading-6 text-neutral-400">
+              Reprocesa el documento si has mejorado el extractor o elimina el
+              archivo si fue subido por error.
+            </p>
+
+            <div className="mt-4 flex flex-wrap gap-3">
+              <ReprocessDocumentButton documentId={doc.id} />
+              <DeleteDocumentButton documentId={doc.id} caseFileId={id} />
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-neutral-800 bg-neutral-950/70 p-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 className="text-base font-semibold text-neutral-50">
+                  Revisión documental
+                </h2>
+
+                <p className="mt-1 text-sm leading-6 text-neutral-400">
+                  Marca el documento como revisado, pendiente o problemático.
+                </p>
+              </div>
+
+              <DocumentReviewBadge status={doc.review_status} />
+            </div>
+
+            <div className="mt-4">
+              <DocumentReviewActions
+                documentId={doc.id}
+                reviewStatus={doc.review_status}
+                reviewNote={doc.review_note}
+              />
+            </div>
+          </section>
+        </div>
       </section>
 
       <section className="grid gap-5 md:grid-cols-3">
@@ -233,9 +211,18 @@ export default async function DocumentDetailPage({ params }: Props) {
         </h2>
 
         {detail.events.length === 0 ? (
-          <p className="mt-3 text-sm text-neutral-400">
-            No se han detectado hitos procesales en este documento.
-          </p>
+          <div className="mt-3 rounded-xl border border-neutral-800 bg-black/20 p-4">
+            <p className="text-sm text-neutral-300">
+              No se han detectado hitos procesales en este documento.
+            </p>
+
+            <p className="mt-2 text-sm leading-6 text-neutral-500">
+              Esto puede ser normal si el documento es un CV, justificante,
+              contrato, nómina, anexo o documento auxiliar. Solo requiere
+              revisión si esperabas encontrar un plazo, una vista, una
+              notificación o un requerimiento.
+            </p>
+          </div>
         ) : (
           <ul className="mt-4 space-y-3">
             {detail.events.map((event) => (

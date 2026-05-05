@@ -115,7 +115,16 @@ func (uc ImportDocument) Execute(ctx context.Context, in ImportDocumentInput) (I
 		content, err := uc.Extractor.ExtractText(ctx, doc.StoragePath)
 		if err != nil {
 			if isUnsupportedExtractionError(err) || isEmptyExtractionError(err) {
-				// No indexamos, pero tampoco rompemos la importación.
+				note := buildExtractionReviewNote(err)
+
+				if reviewErr := markImportedDocumentAsError(ctx, uc.Documents, doc.ID, note); reviewErr != nil {
+					_ = uc.Storage.DeleteDocument(ctx, documentID.String())
+					return ImportDocumentResult{}, reviewErr
+				}
+
+				doc.ReviewStatus = document.DocumentReviewStatusError
+				doc.ReviewedAt = time.Now().UTC().Format(time.RFC3339)
+				doc.ReviewNote = note
 			} else {
 				_ = uc.Storage.DeleteDocument(ctx, documentID.String())
 				return ImportDocumentResult{}, err
@@ -172,6 +181,41 @@ func (uc ImportDocument) Execute(ctx context.Context, in ImportDocumentInput) (I
 		EventsAnalyzed:   eventsAnalyzed,
 		EventsDetected:   eventsDetected,
 	}, nil
+}
+
+func markImportedDocumentAsError(
+	ctx context.Context,
+	documents ports.DocumentRepository,
+	documentID shared.ID,
+	note string,
+) error {
+	if documents == nil {
+		return nil
+	}
+
+	return documents.UpdateReviewState(
+		ctx,
+		documentID,
+		document.DocumentReviewStatusError,
+		time.Now().UTC().Format(time.RFC3339),
+		note,
+	)
+}
+
+func buildExtractionReviewNote(err error) string {
+	if err == nil {
+		return "No se ha podido extraer texto del documento."
+	}
+
+	if isEmptyExtractionError(err) {
+		return "No se ha podido extraer texto útil del documento. Puede tratarse de un PDF escaneado, una imagen o un archivo vacío."
+	}
+
+	if isUnsupportedExtractionError(err) {
+		return "Formato no soportado por el extractor de texto."
+	}
+
+	return "No se ha podido extraer texto del documento."
 }
 
 func isUnsupportedExtractionError(err error) bool {

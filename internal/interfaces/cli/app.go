@@ -273,8 +273,19 @@ func (a App) runDemo(ctx context.Context) error {
 	fmt.Fprintln(a.Out)
 
 	fmt.Fprintf(a.Out, "Documentos (%d):\n", len(detail.Documents))
-	for i, d := range detail.Documents {
-		fmt.Fprintf(a.Out, "  %d. %s (%s)\n", i+1, d.OriginalName, d.StoragePath)
+	for i, summary := range detail.Documents {
+		doc := summary.Document
+
+		fmt.Fprintf(
+			a.Out,
+			"  %d. %s (%s) | texto=%v | metadata=%v | eventos=%d\n",
+			i+1,
+			doc.OriginalName,
+			doc.StoragePath,
+			summary.HasExtractedText,
+			summary.HasMetadata,
+			summary.EventCount,
+		)
 	}
 	fmt.Fprintln(a.Out)
 
@@ -1166,9 +1177,39 @@ func (a App) runGetCaseFile(ctx context.Context, args []string) error {
 	}
 
 	fmt.Fprintf(a.Out, "Documents (%d):\n", len(detail.Documents))
-	for i, d := range detail.Documents {
-		fmt.Fprintf(a.Out, "  %d. %s (%s)\n", i+1, d.OriginalName, d.StoragePath)
+	for i, summary := range detail.Documents {
+		doc := summary.Document
+
+		fmt.Fprintf(
+			a.Out,
+			"  %d. id=%s | name=%s | path=%s | mime=%s | review=%s\n",
+			i+1,
+			doc.ID,
+			doc.OriginalName,
+			doc.StoragePath,
+			doc.MimeType,
+			doc.ReviewStatus,
+		)
+
+		fmt.Fprintf(
+			a.Out,
+			"     text=%v | metadata=%v | type=%s | area=%s | events=%d\n",
+			summary.HasExtractedText,
+			summary.HasMetadata,
+			summary.DocumentType,
+			summary.LegalArea,
+			summary.EventCount,
+		)
+
+		if strings.TrimSpace(doc.ReviewedAt) != "" {
+			fmt.Fprintf(a.Out, "     reviewed_at=%s\n", doc.ReviewedAt)
+		}
+
+		if strings.TrimSpace(doc.ReviewNote) != "" {
+			fmt.Fprintf(a.Out, "     review_note=%s\n", doc.ReviewNote)
+		}
 	}
+
 	return nil
 }
 

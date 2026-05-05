@@ -26,8 +26,15 @@ export type DocumentReviewStatus = "pending_review" | "reviewed" | "error";
 export type DocumentReviewResponse = {
   document_id: string;
   review_status: DocumentReviewStatus;
-  reviewed_at: string;
-  review_note: string;
+  reviewed_at?: string;
+  review_note?: string;
+};
+
+export type DocumentSearchResult = {
+  document_id: string;
+  original_name: string;
+  case_file_id: string;
+  snippet: string;
 };
 
 export type DocumentItem = {
@@ -43,6 +50,13 @@ export type DocumentItem = {
   review_status: DocumentReviewStatus;
   reviewed_at?: string;
   review_note?: string;
+
+  has_extracted_text?: boolean;
+  has_metadata?: boolean;
+  document_type?: string;
+  legal_area?: string;
+  metadata_analyzed_at?: string;
+  events_count?: number;
 };
 
 export type EventItem = {
@@ -78,10 +92,20 @@ export type EventItem = {
   resolution_note?: string;
 };
 
+export type DocumentSummary = {
+  document: DocumentItem;
+  has_extracted_text: boolean;
+  has_metadata: boolean;
+  document_type: string;
+  legal_area: string;
+  has_events: boolean;
+  event_count: number;
+};
+
 export type CaseFileDetail = {
   case_file: CaseFile;
   notes: Note[];
-  documents: DocumentItem[];
+  documents: DocumentSummary[];
 };
 
 export type Dashboard = {

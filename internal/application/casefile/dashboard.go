@@ -111,10 +111,12 @@ func (uc GetCaseFileDashboard) Execute(ctx context.Context, in GetCaseFileDashbo
 		case document.ReviewStatusResolved:
 			result.ResolvedCount++
 			result.ResolvedEventCount++
+
 		case document.ReviewStatusReviewed:
 			result.ReviewedCount++
 			result.ActiveEventCount++
 			activeEvents = append(activeEvents, e)
+
 		default:
 			result.PendingReviewCount++
 			result.ActiveEventCount++
@@ -122,19 +124,27 @@ func (uc GetCaseFileDashboard) Execute(ctx context.Context, in GetCaseFileDashbo
 		}
 	}
 
-	for _, doc := range detail.Documents {
+	for _, summary := range detail.Documents {
+		doc := summary.Document
+
 		if uc.DocumentContents != nil {
 			content, err := uc.DocumentContents.GetByDocumentID(ctx, doc.ID.String())
 			if err != nil {
 				if err == shared.ErrNotFound {
 					result.DocumentsWithoutText++
-					result.DocumentsWithoutTextList = append(result.DocumentsWithoutTextList, doc.OriginalName)
+					result.DocumentsWithoutTextList = append(
+						result.DocumentsWithoutTextList,
+						doc.OriginalName,
+					)
 				} else {
 					return CaseFileDashboardResult{}, err
 				}
 			} else if strings.TrimSpace(content) == "" {
 				result.DocumentsWithoutText++
-				result.DocumentsWithoutTextList = append(result.DocumentsWithoutTextList, doc.OriginalName)
+				result.DocumentsWithoutTextList = append(
+					result.DocumentsWithoutTextList,
+					doc.OriginalName,
+				)
 			}
 		}
 
@@ -143,15 +153,26 @@ func (uc GetCaseFileDashboard) Execute(ctx context.Context, in GetCaseFileDashbo
 			if err != nil {
 				if err == shared.ErrNotFound {
 					result.DocumentsWithUnknownMetadata++
-					result.DocumentsWithUnknownMetadataList = append(result.DocumentsWithUnknownMetadataList, doc.OriginalName)
+					result.DocumentsWithUnknownMetadataList = append(
+						result.DocumentsWithUnknownMetadataList,
+						doc.OriginalName,
+					)
 				} else {
 					return CaseFileDashboardResult{}, err
 				}
 			} else {
-				if strings.TrimSpace(meta.DocumentType) == "" || meta.DocumentType == "unknown" ||
-					strings.TrimSpace(meta.LegalArea) == "" || meta.LegalArea == "unknown" {
+				documentType := strings.TrimSpace(meta.DocumentType)
+				legalArea := strings.TrimSpace(meta.LegalArea)
+
+				if documentType == "" ||
+					documentType == "unknown" ||
+					legalArea == "" ||
+					legalArea == "unknown" {
 					result.DocumentsWithUnknownMetadata++
-					result.DocumentsWithUnknownMetadataList = append(result.DocumentsWithUnknownMetadataList, doc.OriginalName)
+					result.DocumentsWithUnknownMetadataList = append(
+						result.DocumentsWithUnknownMetadataList,
+						doc.OriginalName,
+					)
 				}
 			}
 		}
@@ -165,7 +186,10 @@ func (uc GetCaseFileDashboard) Execute(ctx context.Context, in GetCaseFileDashbo
 			activeDocEvents := filterActiveDocumentEvents(docEvents)
 			if len(activeDocEvents) == 0 {
 				result.DocumentsWithoutEvents++
-				result.DocumentsWithoutEventsList = append(result.DocumentsWithoutEventsList, doc.OriginalName)
+				result.DocumentsWithoutEventsList = append(
+					result.DocumentsWithoutEventsList,
+					doc.OriginalName,
+				)
 			}
 		}
 	}
@@ -298,16 +322,19 @@ func normalizeReviewStatus(s string) string {
 	if value == "" {
 		return document.ReviewStatusPending
 	}
+
 	return value
 }
 
 func filterActiveDocumentEvents(events []document.Event) []document.Event {
 	active := make([]document.Event, 0, len(events))
+
 	for _, e := range events {
 		if normalizeReviewStatus(e.ReviewStatus) != document.ReviewStatusResolved {
 			active = append(active, e)
 		}
 	}
+
 	return active
 }
 
@@ -315,6 +342,7 @@ func shortDocumentName(names []string) string {
 	if len(names) == 0 {
 		return ""
 	}
+
 	return names[0]
 }
 
@@ -349,6 +377,7 @@ func buildDashboardRecommendedAction(events []documentapp.UpcomingEvent) string 
 				best.EventDate,
 			)
 		}
+
 		return fmt.Sprintf(
 			"%s%s overdue %s%s from %s",
 			reviewPrefix,
@@ -379,6 +408,7 @@ func buildDashboardRecommendedAction(events []documentapp.UpcomingEvent) string 
 				best.EventDate,
 			)
 		}
+
 		return fmt.Sprintf(
 			"%smonitor upcoming %s%s for %s",
 			reviewPrefix,

@@ -12,6 +12,7 @@ import (
 
 	casefileapp "lexbox/internal/application/casefile"
 	documentapp "lexbox/internal/application/document"
+	noteapp "lexbox/internal/application/note"
 	"lexbox/internal/domain/casefile"
 	"lexbox/internal/domain/client"
 	"lexbox/internal/domain/document"
@@ -72,6 +73,7 @@ func runHTTPTestMigrations(t *testing.T, db *sql.DB) {
 		filepath.Join("..", "..", "..", "migrations", "006_document_event_semantics.sql"),
 		filepath.Join("..", "..", "..", "migrations", "007_case_file_event_config.sql"),
 		filepath.Join("..", "..", "..", "migrations", "008_document_event_review_state.sql"),
+		filepath.Join("..", "..", "..", "migrations", "009_document_review_state.sql"),
 	}
 
 	for _, path := range paths {
@@ -149,6 +151,15 @@ func TestCaseFileDashboardEndpoint(t *testing.T) {
 			DocumentContents: deps.documentContentRepo,
 			Metadata:         deps.documentMetadataRepo,
 			Events:           deps.documentEventRepo,
+		},
+		AddNote: noteapp.AddNote{
+			Notes:     deps.noteRepo,
+			CaseFiles: deps.caseFileRepo,
+			IDs:       deps.ids,
+		},
+
+		DeleteNote: noteapp.DeleteNote{
+			Notes: deps.noteRepo,
 		},
 	}
 

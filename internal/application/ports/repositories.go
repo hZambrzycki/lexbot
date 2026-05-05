@@ -27,6 +27,7 @@ type CaseFileRepository interface {
 type NoteRepository interface {
 	Save(ctx context.Context, n note.Note) error
 	ListByCaseFileID(ctx context.Context, caseFileID shared.ID) ([]note.Note, error)
+	Delete(ctx context.Context, id shared.ID) error
 }
 
 type DocumentRepository interface {

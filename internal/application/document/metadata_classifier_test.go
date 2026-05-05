@@ -153,11 +153,11 @@ func TestClassifyDocumentMetadata_NonLegalDocument(t *testing.T) {
 
 	got := classifyDocumentMetadata(content)
 
-	if got.DocumentType != "unknown" {
-		t.Fatalf("expected document type %q, got %q", "unknown", got.DocumentType)
+	if got.DocumentType != "non_legal" {
+		t.Fatalf("expected document type %q, got %q", "non_legal", got.DocumentType)
 	}
 
-	if got.LegalArea != "unknown" {
-		t.Fatalf("expected legal area %q, got %q", "unknown", got.LegalArea)
+	if got.LegalArea != "non_legal" {
+		t.Fatalf("expected legal area %q, got %q", "non_legal", got.LegalArea)
 	}
 }

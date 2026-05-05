@@ -10,6 +10,13 @@ type metadataClassification struct {
 func classifyDocumentMetadata(content string) metadataClassification {
 	text := normalizeMetadataText(content)
 
+	if isLikelyCVOrProfile(text) {
+		return metadataClassification{
+			DocumentType: "non_legal",
+			LegalArea:    "non_legal",
+		}
+	}
+
 	if !hasEnoughLegalSignal(text) {
 		return metadataClassification{
 			DocumentType: "unknown",
@@ -25,6 +32,63 @@ func classifyDocumentMetadata(content string) metadataClassification {
 
 func normalizeMetadataText(content string) string {
 	return normalizeASCIIText(content)
+}
+
+func isLikelyCVOrProfile(text string) bool {
+	cvSignals := []string{
+		"curriculum",
+		"curriculum vitae",
+		"cv",
+		"perfil profesional",
+		"sobre mi",
+		"experiencia laboral",
+		"educacion",
+		"certificaciones",
+		"stack tecnico",
+		"lenguajes",
+		"backend",
+		"frontend",
+		"github",
+		"linkedin",
+		"desarrollador",
+		"programador",
+		"java",
+		"python",
+		"javascript",
+		"react",
+		"next.js",
+		"docker",
+		"kubernetes",
+		"linux",
+		"sql",
+	}
+
+	legalSignals := []string{
+		"juzgado",
+		"tribunal",
+		"procedimiento",
+		"autos",
+		"demanda",
+		"contestacion a la demanda",
+		"fundamentos de derecho",
+		"suplico",
+		"fallo",
+		"sentencia",
+		"auto",
+		"providencia",
+		"diligencia de ordenacion",
+		"decreto",
+		"notifiquese",
+		"recurso",
+		"plazo",
+		"dias habiles",
+		"dias naturales",
+	}
+
+	cvScore := countKeywordMatches(text, cvSignals)
+	legalScore := countKeywordMatches(text, legalSignals)
+
+	return cvScore >= 3 && legalScore == 0
 }
 
 func hasEnoughLegalSignal(text string) bool {
@@ -200,12 +264,14 @@ func classifyDocumentType(text string) string {
 		{
 			documentType: "judgment",
 			keywords: []string{
+				"sentencia",
+				"sentencia firme",
 				"debo condenar y condeno",
 				"fallo",
 				"parte dispositiva",
-				"sentencia firme",
+				"fundamentos de derecho",
 			},
-			minScore: 1,
+			minScore: 2,
 		},
 		{
 			documentType: "payroll",
@@ -427,20 +493,53 @@ func classifyLegalArea(text string) string {
 }
 
 func containsAny(text string, values ...string) bool {
+	return containsAnyPhrase(text, values...)
+}
+
+func containsAnyPhrase(text string, values ...string) bool {
 	for _, value := range values {
 		if strings.Contains(text, value) {
 			return true
 		}
 	}
+
 	return false
 }
 
 func countKeywordMatches(text string, keywords []string) int {
 	score := 0
+
 	for _, keyword := range keywords {
+		keyword = strings.TrimSpace(keyword)
+		if keyword == "" {
+			continue
+		}
+
+		if len(keyword) <= 3 {
+			if hasStandaloneWord(text, keyword) {
+				score++
+			}
+			continue
+		}
+
 		if strings.Contains(text, keyword) {
 			score++
 		}
 	}
+
 	return score
+}
+
+func hasStandaloneWord(text string, word string) bool {
+	fields := strings.FieldsFunc(text, func(r rune) bool {
+		return !(r >= 'a' && r <= 'z') && !(r >= '0' && r <= '9')
+	})
+
+	for _, field := range fields {
+		if field == word {
+			return true
+		}
+	}
+
+	return false
 }

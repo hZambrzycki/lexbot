@@ -250,6 +250,7 @@ func runDashboardTestMigrations(t *testing.T, db *sql.DB) {
 		filepath.Join("..", "..", "..", "migrations", "006_document_event_semantics.sql"),
 		filepath.Join("..", "..", "..", "migrations", "007_case_file_event_config.sql"),
 		filepath.Join("..", "..", "..", "migrations", "008_document_event_review_state.sql"),
+		filepath.Join("..", "..", "..", "migrations", "009_document_review_state.sql"),
 	}
 
 	for _, path := range paths {

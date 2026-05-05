@@ -43,6 +43,7 @@ func (r *NoteRepository) ListByCaseFileID(ctx context.Context, caseFileID shared
 		SELECT id, case_file_id, title, content, created_at, updated_at
 		FROM notes
 		WHERE case_file_id = ?
+		ORDER BY created_at DESC
 	`
 
 	rows, err := r.db.QueryContext(ctx, query, caseFileID.String())
@@ -74,4 +75,11 @@ func (r *NoteRepository) ListByCaseFileID(ctx context.Context, caseFileID shared
 	}
 
 	return result, rows.Err()
+}
+
+func (r *NoteRepository) Delete(ctx context.Context, id shared.ID) error {
+	const query = `DELETE FROM notes WHERE id = ?`
+
+	_, err := r.db.ExecContext(ctx, query, id.String())
+	return err
 }

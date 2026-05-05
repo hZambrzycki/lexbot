@@ -2,9 +2,13 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
+
+	documentapp "lexbox/internal/application/document"
+	"lexbox/internal/domain/shared"
 )
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -51,6 +55,40 @@ func sanitizeDownloadFilename(filename string) string {
 }
 
 func writeError(w http.ResponseWriter, err error) {
+	if err == nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "internal server error",
+		})
+		return
+	}
+
+	var duplicateErr documentapp.DuplicateDocumentError
+	if errors.As(err, &duplicateErr) {
+		name := strings.TrimSpace(duplicateErr.Existing.OriginalName)
+		if name == "" {
+			name = "otro documento"
+		}
+
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"error": fmt.Sprintf("Este documento ya está subido en el expediente como %q.", name),
+		})
+		return
+	}
+
+	if errors.Is(err, shared.ErrNotFound) {
+		writeJSON(w, http.StatusNotFound, map[string]string{
+			"error": "No se ha encontrado el recurso solicitado.",
+		})
+		return
+	}
+
+	if errors.Is(err, shared.ErrInvalidAssociation) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "La asociación indicada no es válida.",
+		})
+		return
+	}
+
 	writeJSON(w, http.StatusInternalServerError, map[string]string{
 		"error": err.Error(),
 	})

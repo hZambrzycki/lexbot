@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { reviewDocument } from "@/lib/api";
 import type { DocumentReviewStatus } from "@/lib/types";
 
 type Props = {
@@ -8,9 +10,6 @@ type Props = {
   reviewStatus?: DocumentReviewStatus;
   reviewNote?: string;
 };
-
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
 
 const baseActionButtonClass =
   "inline-flex items-center justify-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-semibold shadow-sm transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50";
@@ -28,6 +27,8 @@ export function DocumentReviewActions({
   reviewStatus = "pending_review",
   reviewNote = "",
 }: Props) {
+  const router = useRouter();
+
   const [note, setNote] = useState(reviewNote);
   const [loading, setLoading] = useState<DocumentReviewStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -47,36 +48,17 @@ export function DocumentReviewActions({
     try {
       setLoading(nextStatus);
 
-      const response = await fetch(
-        `${API_BASE_URL}/documents/${documentId}/review`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            review_status: nextStatus,
-            review_note: nextStatus === "error" ? cleanNote : "",
-          }),
-        },
+      await reviewDocument(
+        documentId,
+        nextStatus,
+        nextStatus === "error" ? cleanNote : "",
       );
 
-      if (!response.ok) {
-        let message = `HTTP ${response.status}`;
+      router.refresh();
 
-        try {
-          const data = (await response.json()) as { error?: string };
-          if (data.error) {
-            message = data.error;
-          }
-        } catch {
-          // ignore non-json error body
-        }
-
-        throw new Error(message);
+      if (nextStatus !== "error") {
+        setShowErrorNote(false);
       }
-
-      window.location.reload();
     } catch (err) {
       setError(
         err instanceof Error
@@ -176,7 +158,6 @@ export function DocumentReviewActions({
           </div>
         </div>
       ) : null}
-
 
       {error ? (
         <p className="w-fit rounded-xl border border-red-900 bg-red-950/30 px-3 py-2 text-xs text-red-100">

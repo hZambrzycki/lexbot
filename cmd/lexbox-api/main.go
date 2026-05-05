@@ -39,6 +39,8 @@ func main() {
 		GetCaseFileDashboard: appServices.GetCaseFileDashboard,
 		ImportDocument:       appServices.ImportDocument,
 		EventHandler:         eventHandler,
+		AddNote:              appServices.AddNote,
+		DeleteNote:           appServices.DeleteNote,
 	}
 
 	documentHandler := httpapi.DocumentHandler{
@@ -46,6 +48,7 @@ func main() {
 		DeleteDocument:    appServices.DeleteDocument,
 		ReprocessDocument: appServices.ReprocessDocument,
 		ReviewDocument:    appServices.ReviewDocument,
+		SearchDocuments:   appServices.SearchDocuments,
 	}
 
 	server.RegisterRoutes(caseFileHandler.Register)

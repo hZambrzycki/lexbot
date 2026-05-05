@@ -51,7 +51,6 @@ func (uc ReviewDocument) Execute(ctx context.Context, input ReviewDocumentInput)
 		return ReviewDocumentOutput{}, ErrReviewNoteRequired
 	}
 
-	// Comprobamos que existe antes de actualizar.
 	if _, err := uc.Documents.GetByID(ctx, documentID); err != nil {
 		return ReviewDocumentOutput{}, err
 	}
@@ -60,7 +59,6 @@ func (uc ReviewDocument) Execute(ctx context.Context, input ReviewDocumentInput)
 
 	switch reviewStatus {
 	case domaindoc.DocumentReviewStatusPending:
-		// Reabrir documento: limpiamos trazabilidad de revisión.
 		reviewNote = ""
 		reviewedAt = ""
 
