@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getDocument } from "@/lib/api";
 import { DeleteDocumentButton } from "./delete-document-button";
 import { ReprocessDocumentButton } from "./reprocess-document-button";
+import { HighlightedText } from "@/app/components/highlighted-text";
 import { DocumentReviewBadge } from "@/app/components/document-review-badge";
 import { DocumentReviewActions } from "@/app/components/document-review-actions";
 import {
@@ -14,6 +15,9 @@ type Props = {
   params: Promise<{
     id: string;
     documentId: string;
+  }>;
+  searchParams?: Promise<{
+    q?: string;
   }>;
 };
 
@@ -60,8 +64,14 @@ function displayDateKind(value?: string) {
   }
 }
 
-export default async function DocumentDetailPage({ params }: Props) {
+export default async function DocumentDetailPage({
+  params,
+  searchParams,
+}: Props) {
   const { id, documentId } = await params;
+  const resolvedSearchParams = searchParams ? await searchParams : {};
+  const query = resolvedSearchParams.q?.trim() ?? "";
+
   const detail = await getDocument(documentId);
   const doc = detail.document;
 
@@ -69,7 +79,9 @@ export default async function DocumentDetailPage({ params }: Props) {
     <main className="space-y-8">
       <section className="space-y-4">
         <Link
-          href={`/case-files/${id}`}
+          href={`/case-files/${id}?tab=documentos${
+            query ? `&q=${encodeURIComponent(query)}` : ""
+          }`}
           className="text-sm text-neutral-400 underline-offset-4 hover:underline"
         >
           ← Volver al expediente
@@ -109,6 +121,18 @@ export default async function DocumentDetailPage({ params }: Props) {
             </span>
           ) : null}
         </div>
+
+        {query ? (
+          <div className="rounded-2xl border border-yellow-900/50 bg-yellow-950/20 p-4">
+            <p className="text-sm font-medium text-yellow-100">
+              Búsqueda activa: “{query}”
+            </p>
+            <p className="mt-1 text-xs text-yellow-200/70">
+              Este documento se abrió desde una coincidencia encontrada en el
+              contenido.
+            </p>
+          </div>
+        ) : null}
 
         {doc.review_note ? (
           <div className="rounded-2xl border border-neutral-800 bg-neutral-950/70 p-4">
@@ -273,7 +297,10 @@ export default async function DocumentDetailPage({ params }: Props) {
         )}
       </section>
 
-      <details className="rounded-2xl border border-neutral-800 bg-neutral-950/70 p-5">
+      <details
+        open={Boolean(query)}
+        className="rounded-2xl border border-neutral-800 bg-neutral-950/70 p-5"
+      >
         <summary className="cursor-pointer text-xl font-semibold text-neutral-50">
           Texto extraído completo
         </summary>
@@ -284,7 +311,7 @@ export default async function DocumentDetailPage({ params }: Props) {
           </p>
         ) : (
           <pre className="mt-4 max-h-[560px] overflow-auto whitespace-pre-wrap rounded-xl border border-neutral-800 bg-black/30 p-4 text-sm leading-6 text-neutral-300">
-            {detail.extracted_text}
+            <HighlightedText text={detail.extracted_text} query={query} />
           </pre>
         )}
       </details>

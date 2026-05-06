@@ -187,6 +187,7 @@ type SearchDocumentResultResponse struct {
 	OriginalName string `json:"original_name"`
 	CaseFileID   string `json:"case_file_id"`
 	Snippet      string `json:"snippet"`
+	Score        int    `json:"score"`
 }
 
 func toCaseFileResponse(cf domaincasefile.CaseFile) CaseFileResponse {
@@ -241,6 +242,7 @@ func toSearchDocumentResultsResponse(items []querymodels.SearchDocumentResult) [
 			OriginalName: item.OriginalName,
 			CaseFileID:   item.CaseFileID,
 			Snippet:      item.Snippet,
+			Score:        item.Score,
 		})
 	}
 

@@ -35,6 +35,7 @@ export type DocumentSearchResult = {
   original_name: string;
   case_file_id: string;
   snippet: string;
+  score: number;
 };
 
 export type DocumentItem = {

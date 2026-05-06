@@ -170,6 +170,7 @@ func scanAndRankSearchResults(rows *sql.Rows, rawQuery string, terms []string, l
 				OriginalName: originalName,
 				CaseFileID:   caseFileID,
 				Snippet:      buildSnippet(content, rawQuery, terms, 180),
+				Score:        score,
 			},
 			score: score,
 		})

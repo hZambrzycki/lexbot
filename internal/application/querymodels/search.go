@@ -5,4 +5,5 @@ type SearchDocumentResult struct {
 	OriginalName string
 	CaseFileID   string
 	Snippet      string
+	Score        int
 }

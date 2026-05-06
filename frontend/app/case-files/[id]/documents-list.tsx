@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DocumentReviewBadge } from "@/app/components/document-review-badge";
@@ -167,7 +167,7 @@ export function DocumentsList({ caseFileId, documents }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
   const [errorDraftId, setErrorDraftId] = useState<string | null>(null);
@@ -175,11 +175,12 @@ export function DocumentsList({ caseFileId, documents }: Props) {
   const [deleteDraftId, setDeleteDraftId] = useState<string | null>(null);
   const [contentResults, setContentResults] = useState<DocumentSearchResult[]>([]);
   const [contentSearchLoading, setContentSearchLoading] = useState(false);
-  const [contentSearchError, setContentSearchError] = useState("");
   const filter = normalizeFilter(searchParams.get("docFilter"));
   const query = searchParams.get("q") ?? "";
   const sort = normalizeSort(searchParams.get("sort"));
-
+  useEffect(() => {
+    searchInputRef.current?.focus();
+  }, []);
   useEffect(() => {
     if (!toast) return;
 
@@ -194,36 +195,36 @@ export function DocumentsList({ caseFileId, documents }: Props) {
     const normalizedQuery = query.trim();
 
     if (normalizedQuery.length < 3) {
-      return;
+      const timeout = window.setTimeout(() => {
+        setContentResults([]);
+        setContentSearchLoading(false);
+      }, 0);
+
+      return () => window.clearTimeout(timeout);
     }
 
     let cancelled = false;
 
     const timeout = window.setTimeout(async () => {
-      setContentSearchLoading(true);
-      setContentSearchError("");
+    setContentSearchLoading(true);
+    setContentResults([]);
 
-      try {
-        const results = await searchDocuments(caseFileId, normalizedQuery);
+    try {
+      const results = await searchDocuments(caseFileId, normalizedQuery);
 
-        if (!cancelled) {
-          setContentResults(results);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setContentResults([]);
-          setContentSearchError(
-            error instanceof Error
-              ? error.message
-              : "No se pudo buscar dentro de los documentos.",
-          );
-        }
-      } finally {
-        if (!cancelled) {
-          setContentSearchLoading(false);
-        }
+      if (!cancelled) {
+        setContentResults(results);
       }
-    }, 300);
+    } catch {
+      if (!cancelled) {
+        setContentResults([]);
+      }
+    } finally {
+      if (!cancelled) {
+        setContentSearchLoading(false);
+      }
+    }
+  }, 300);
 
     return () => {
       cancelled = true;
@@ -247,7 +248,7 @@ export function DocumentsList({ caseFileId, documents }: Props) {
     if (nextFilter === "all") params.delete("docFilter");
     else params.set("docFilter", nextFilter);
 
-    if (nextQuery.trim()) params.set("q", nextQuery.trim());
+    if (nextQuery.length > 0) params.set("q", nextQuery);
     else params.delete("q");
 
     if (nextSort === "recent") params.delete("sort");
@@ -266,6 +267,27 @@ export function DocumentsList({ caseFileId, documents }: Props) {
 
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
   }
+
+  function renderHighlightedSnippet(snippet: string) {
+  const parts = snippet.split(/(\[[^\]]+\])/g);
+
+  return parts.map((part, index) => {
+    const isHighlighted = part.startsWith("[") && part.endsWith("]");
+
+    if (!isHighlighted) {
+      return <span key={index}>{part}</span>;
+    }
+
+    return (
+      <mark
+        key={index}
+        className="rounded-md border border-yellow-700/40 bg-yellow-900/40 px-1 text-yellow-100"
+      >
+        {part.slice(1, -1)}
+      </mark>
+    );
+  });
+}
 
   async function runAction(
     documentId: string,
@@ -396,33 +418,59 @@ export function DocumentsList({ caseFileId, documents }: Props) {
   })();
 
   const normalizedQuery = normalizeText(query);
+  const contentMatchMap = useMemo(() => {
+  const map = new Map<string, DocumentSearchResult>();
+
+  for (const result of contentResults) {
+    map.set(result.document_id, result);
+  }
+
+  return map;
+}, [contentResults]);
+  const trimmedQuery = query.trim();
+  const canSearchContent = trimmedQuery.length >= 3;
 
   const byQuery = !normalizedQuery
-    ? byFilter
-    : byFilter.filter((summary) => {
-        const doc = summary.document;
-        const health = documentHealth(summary);
+  ? byFilter
+  : byFilter.filter((summary) => {
+      const doc = summary.document;
+      const health = documentHealth(summary);
 
-        const haystack = [
-          doc.original_name,
-          doc.mime_type,
-          doc.review_status,
-          summary.document_type,
-          summary.legal_area,
-          displayMimeType(doc.mime_type),
-          displayDocumentType(summary.document_type),
-          displayLegalArea(summary.legal_area),
-          health.label,
-          summary.has_extracted_text ? "texto extraído" : "sin texto",
-          (summary.event_count ?? 0) > 0 ? "con hitos" : "sin hitos",
-        ]
-          .map(normalizeText)
-          .join(" ");
+      const haystack = [
+        doc.original_name,
+        doc.mime_type,
+        doc.review_status,
+        summary.document_type,
+        summary.legal_area,
+        displayMimeType(doc.mime_type),
+        displayDocumentType(summary.document_type),
+        displayLegalArea(summary.legal_area),
+        health.label,
+        summary.has_extracted_text ? "texto extraído" : "sin texto",
+        (summary.event_count ?? 0) > 0 ? "con hitos" : "sin hitos",
+      ]
+        .map(normalizeText)
+        .join(" ");
 
-        return haystack.includes(normalizedQuery);
-      });
+      const matchesMetadata = haystack.includes(normalizedQuery);
+      const matchesContent = contentMatchMap.has(doc.id);
 
+      return matchesMetadata || matchesContent;
+    });
   const filteredDocuments = [...byQuery].sort((a, b) => {
+    const aContentMatch = contentMatchMap.has(a.document.id);
+    const bContentMatch = contentMatchMap.has(b.document.id);
+    if (aContentMatch !== bContentMatch) {
+      return Number(bContentMatch) - Number(aContentMatch);
+    }
+    if (aContentMatch && bContentMatch) {
+        const aScore = contentMatchMap.get(a.document.id)?.score ?? 0;
+        const bScore = contentMatchMap.get(b.document.id)?.score ?? 0;
+
+        if (aScore !== bScore) {
+          return bScore - aScore;
+        }
+      }
     switch (sort) {
       case "name":
         return a.document.original_name.localeCompare(
@@ -482,9 +530,10 @@ export function DocumentsList({ caseFileId, documents }: Props) {
 
           <div className="grid gap-2 lg:grid-cols-[1fr_auto_auto] lg:items-center">
             <input
+              ref={searchInputRef}
               value={query}
               onChange={(event) => updateUrl({ query: event.target.value })}
-              placeholder="Buscar por nombre, tipo, área, estado..."
+              placeholder="Buscar por nombre, tipo, estado o contenido..."
               className="w-full rounded-2xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-red-900/70"
             />
 
@@ -508,79 +557,35 @@ export function DocumentsList({ caseFileId, documents }: Props) {
                 onClick={clearFilters}
                 className="whitespace-nowrap rounded-2xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm font-medium text-neutral-400 transition hover:border-neutral-700 hover:bg-neutral-900 hover:text-neutral-100"
               >
-                Limpiar filtros
+                {query.trim() ? "Limpiar búsqueda" : "Limpiar filtros"}
               </button>
             ) : null}
           </div>
 
           <p className="text-xs text-neutral-500">
-            Mostrando {filteredDocuments.length} de {documents.length}{" "}
-            documentos.
+            Mostrando {filteredDocuments.length} de {documents.length} documentos por filtros visibles.
           </p>
-          {query.trim().length >= 3 ? (
-            <div className="rounded-2xl border border-neutral-800 bg-neutral-950/80 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-neutral-100">
-                    Resultados dentro del contenido
-                  </p>
-                  <p className="mt-1 text-xs text-neutral-500">
-                    Coincidencias encontradas en el texto extraído de los documentos.
-                  </p>
-                </div>
-
-                {contentSearchLoading ? (
-                  <span className="text-xs text-neutral-500">Buscando...</span>
-                ) : (
-                  <span className="rounded-full border border-neutral-700 bg-neutral-950 px-2.5 py-1 text-xs text-neutral-400">
-                    {query.trim().length >= 3 ? contentResults.length : 0}
-                  </span>
-                )}
-              </div>
-
-              {contentSearchError ? (
-                <p className="mt-3 rounded-xl border border-red-900/60 bg-red-950/20 p-3 text-xs text-red-100">
-                  {contentSearchError}
-                </p>
-              ) : null}
-
-              {!contentSearchLoading &&
-              !contentSearchError &&
-              contentResults.length === 0 ? (
-                <p className="mt-3 text-sm text-neutral-500">
-                  No hay coincidencias dentro del texto extraído.
-                </p>
-              ) : null}
-
-              {contentResults.length > 0 ? (
-                <ul className="mt-3 space-y-2">
-                  {contentResults.map((result) => (
-                    <li
-                      key={result.document_id}
-                      className="rounded-xl border border-neutral-800 bg-neutral-900/80 p-3"
-                    >
-                      <Link
-                        href={`/case-files/${caseFileId}/documents/${result.document_id}`}
-                        className="text-sm font-medium text-neutral-100 underline-offset-4 hover:underline"
-                      >
-                        {result.original_name}
-                      </Link>
-
-                      <p className="mt-2 text-xs leading-5 text-neutral-400">
-                        {result.snippet}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-            </div>
-          ) : null}
+          {canSearchContent && contentSearchLoading ? (
+              <p className="text-xs text-neutral-500">
+                Buscando dentro del texto extraído...
+              </p>
+            ) : null}
+          {canSearchContent && contentResults.length > 0 ? (
+              <p className="text-xs text-yellow-200">
+                {contentResults.length === 1
+                  ? "1 documento contiene coincidencias dentro del texto extraído."
+                  : `${contentResults.length} documentos contienen coincidencias dentro del texto extraído.`}
+              </p>
+            ) : null}
+          
         </div>
 
         {filteredDocuments.length === 0 ? (
-          <p className="mt-4 rounded-xl border border-neutral-800 bg-neutral-900 p-4 text-sm text-neutral-400">
-            No hay documentos para este filtro, búsqueda u ordenación.
-          </p>
+         <p className="mt-4 rounded-xl border border-neutral-800 bg-neutral-900 p-4 text-sm text-neutral-400">
+          {canSearchContent && contentResults.length > 0
+            ? "No hay coincidencias por nombre, tipo o estado, pero sí hay resultados dentro del contenido."
+            : "No hay documentos para este filtro, búsqueda u ordenación."}
+        </p>
         ) : (
           <ul className="mt-4 divide-y divide-neutral-800 rounded-2xl border border-neutral-800 bg-neutral-950/40">
             {filteredDocuments.map((summary) => {
@@ -596,7 +601,9 @@ export function DocumentsList({ caseFileId, documents }: Props) {
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <Link
-                        href={`/case-files/${caseFileId}/documents/${doc.id}`}
+                        href={`/case-files/${caseFileId}/documents/${doc.id}${
+                          trimmedQuery ? `?q=${encodeURIComponent(trimmedQuery)}` : ""
+                        }`}
                         className="truncate text-base font-semibold text-neutral-100 underline-offset-4 hover:underline"
                       >
                         {doc.original_name}
@@ -611,6 +618,11 @@ export function DocumentsList({ caseFileId, documents }: Props) {
                       </span>
 
                       <DocumentReviewBadge status={doc.review_status} />
+                      {contentMatchMap.has(doc.id) ? (
+                        <span className="rounded-full border border-yellow-900/70 bg-yellow-950/30 px-2.5 py-1 text-xs font-medium text-yellow-100">
+                          Coincidencia en contenido
+                        </span>
+                      ) : null}
                     </div>
 
                     <div className="mt-2 flex flex-wrap gap-2 text-xs text-neutral-400">
@@ -628,7 +640,11 @@ export function DocumentsList({ caseFileId, documents }: Props) {
                       <span>·</span>
                       <span>{documentEventsLabel(summary.event_count)}</span>
                     </div>
-
+                    {contentMatchMap.has(doc.id) ? (
+                      <p className="mt-2 rounded-xl border border-yellow-900/40 bg-yellow-950/20 p-3 text-xs leading-5 text-yellow-100/90">
+                        {renderHighlightedSnippet(contentMatchMap.get(doc.id)!.snippet)}
+                      </p>
+                    ) : null}
                     {doc.review_note ? (
                       <p className="mt-2 line-clamp-1 text-xs text-neutral-500">
                         Nota: {doc.review_note}
@@ -645,7 +661,9 @@ export function DocumentsList({ caseFileId, documents }: Props) {
 
                   <div className="flex flex-wrap items-center gap-2 xl:justify-end">
                     <Link
-                      href={`/case-files/${caseFileId}/documents/${doc.id}`}
+                      href={`/case-files/${caseFileId}/documents/${doc.id}${
+                        trimmedQuery ? `?q=${encodeURIComponent(trimmedQuery)}` : ""
+                      }`}
                       className={actionButtonClass("neutral")}
                     >
                       Ver
