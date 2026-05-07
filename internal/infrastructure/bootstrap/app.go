@@ -19,48 +19,49 @@ type App struct {
 		Close() error
 	}
 
-	CreateClient               clientapp.CreateClient
-	GetClient                  clientapp.GetClient
-	ListClients                clientapp.ListClients
-	CreateCaseFile             casefileapp.CreateCaseFile
-	UpdateCaseFileConfig       casefileapp.UpdateCaseFileConfig
-	ListCaseFiles              casefileapp.ListCaseFiles
-	ListCaseFilesByClient      casefileapp.ListCaseFilesByClient
-	GetCaseFileDashboard       casefileapp.GetCaseFileDashboard
-	AddNote                    noteapp.AddNote
-	DeleteNote                 noteapp.DeleteNote
-	ListNotesByCaseFile        noteapp.ListNotesByCaseFile
-	AttachDocument             documentapp.AttachDocument
-	ImportDocument             documentapp.ImportDocument
-	ListDocumentsByCaseFile    documentapp.ListDocumentsByCaseFile
-	DeleteDocument             documentapp.DeleteDocument
-	ReviewDocument             documentapp.ReviewDocument
-	ExtractDocumentText        documentapp.ExtractDocumentText
-	SearchDocuments            documentapp.SearchDocuments
-	GetDocumentDetail          documentapp.GetDocumentDetail
-	GetCaseFileDetail          casefileapp.GetCaseFileDetail
-	StorageAudit               documentapp.StorageAudit
-	StorageCleanOrphans        documentapp.StorageCleanOrphans
-	MimeNormalize              documentapp.MimeNormalize
-	VerifyDocument             documentapp.VerifyDocument
-	VerifyAllDocuments         documentapp.VerifyAllDocuments
-	ReindexDocument            documentapp.ReindexDocument
-	ReindexAllDocuments        documentapp.ReindexAllDocuments
-	AnalyzeDocumentMetadata    documentapp.AnalyzeDocumentMetadata
-	AnalyzeAllDocumentMetadata documentapp.AnalyzeAllDocumentMetadata
-	AnalyzeDocumentEvents      documentapp.AnalyzeDocumentEvents
-	AnalyzeAllDocumentEvents   documentapp.AnalyzeAllDocumentEvents
-	ListDocumentEvents         documentapp.ListDocumentEvents
-	ListEventsByCaseFile       documentapp.ListEventsByCaseFile
-	ListUpcomingEvents         documentapp.ListUpcomingEvents
-	ExportUpcomingEventsICS    documentapp.ExportUpcomingEventsICS
-	MarkEventReviewed          documentapp.MarkEventReviewed
-	MarkEventResolved          documentapp.MarkEventResolved
-	ReopenEvent                documentapp.ReopenEvent
-	FixCaseFile                casefileapp.FixCaseFile
-	AuditCaseFile              casefileapp.AuditCaseFile
-	GetEvent                   documentapp.GetEvent
-	ReprocessDocument          documentapp.ReprocessDocument
+	CreateClient                clientapp.CreateClient
+	GetClient                   clientapp.GetClient
+	ListClients                 clientapp.ListClients
+	CreateCaseFile              casefileapp.CreateCaseFile
+	UpdateCaseFileConfig        casefileapp.UpdateCaseFileConfig
+	ListCaseFiles               casefileapp.ListCaseFiles
+	ListCaseFilesByClient       casefileapp.ListCaseFilesByClient
+	GetCaseFileDashboard        casefileapp.GetCaseFileDashboard
+	AddNote                     noteapp.AddNote
+	DeleteNote                  noteapp.DeleteNote
+	ListNotesByCaseFile         noteapp.ListNotesByCaseFile
+	AttachDocument              documentapp.AttachDocument
+	ImportDocument              documentapp.ImportDocument
+	ListDocumentsByCaseFile     documentapp.ListDocumentsByCaseFile
+	DeleteDocument              documentapp.DeleteDocument
+	ReviewDocument              documentapp.ReviewDocument
+	ExtractDocumentText         documentapp.ExtractDocumentText
+	SearchDocuments             documentapp.SearchDocuments
+	GetDocumentDetail           documentapp.GetDocumentDetail
+	GetCaseFileDetail           casefileapp.GetCaseFileDetail
+	StorageAudit                documentapp.StorageAudit
+	StorageCleanOrphans         documentapp.StorageCleanOrphans
+	MimeNormalize               documentapp.MimeNormalize
+	VerifyDocument              documentapp.VerifyDocument
+	VerifyAllDocuments          documentapp.VerifyAllDocuments
+	ReindexDocument             documentapp.ReindexDocument
+	ReindexAllDocuments         documentapp.ReindexAllDocuments
+	AnalyzeDocumentMetadata     documentapp.AnalyzeDocumentMetadata
+	AnalyzeAllDocumentMetadata  documentapp.AnalyzeAllDocumentMetadata
+	AnalyzeDocumentEvents       documentapp.AnalyzeDocumentEvents
+	AnalyzeAllDocumentEvents    documentapp.AnalyzeAllDocumentEvents
+	ListDocumentEvents          documentapp.ListDocumentEvents
+	ListEventsByCaseFile        documentapp.ListEventsByCaseFile
+	ListUpcomingEvents          documentapp.ListUpcomingEvents
+	ExportUpcomingEventsICS     documentapp.ExportUpcomingEventsICS
+	MarkEventReviewed           documentapp.MarkEventReviewed
+	MarkEventResolved           documentapp.MarkEventResolved
+	ReopenEvent                 documentapp.ReopenEvent
+	FixCaseFile                 casefileapp.FixCaseFile
+	AuditCaseFile               casefileapp.AuditCaseFile
+	GetEvent                    documentapp.GetEvent
+	ReprocessDocument           documentapp.ReprocessDocument
+	BackfillDocumentSearchIndex documentapp.BackfillDocumentSearchIndex
 }
 
 func BuildApp(ctx context.Context) (*App, error) {
@@ -107,6 +108,10 @@ func BuildApp(ctx context.Context) (*App, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	if err := reposqlite.RunMigrations(db, "migrations/010_document_search_index.sql"); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 
 	clientRepo := reposqlite.NewClientRepository(db)
 	caseFileRepo := reposqlite.NewCaseFileRepository(db)
@@ -115,6 +120,14 @@ func BuildApp(ctx context.Context) (*App, error) {
 	documentContentRepo := reposqlite.NewDocumentContentRepository(db)
 	documentMetadataRepo := reposqlite.NewDocumentMetadataRepository(db)
 	documentEventRepo := reposqlite.NewDocumentEventRepository(db)
+	documentSearchIndexRepo := reposqlite.NewDocumentSearchIndexRepository(db)
+
+	backfillDocumentSearchIndex := documentapp.BackfillDocumentSearchIndex{
+		Documents:        documentRepo,
+		DocumentContents: documentContentRepo,
+		Metadata:         documentMetadataRepo,
+		SearchIndex:      documentSearchIndexRepo,
+	}
 
 	idGenerator := idgen.NewIDGenerator()
 	storage := localstorage.NewStorage(".lexbox/storage")
@@ -165,6 +178,9 @@ func BuildApp(ctx context.Context) (*App, error) {
 	}
 
 	reprocessDocument := documentapp.ReprocessDocument{
+		Documents:               documentRepo,
+		DocumentContents:        documentContentRepo,
+		SearchIndex:             documentSearchIndexRepo,
 		ReindexDocument:         reindexDocument,
 		AnalyzeDocumentMetadata: analyzeDocumentMetadata,
 		AnalyzeDocumentEvents:   analyzeDocumentEvents,
@@ -255,6 +271,7 @@ func BuildApp(ctx context.Context) (*App, error) {
 			Documents:        documentRepo,
 			DocumentContents: documentContentRepo,
 			Metadata:         documentMetadataRepo,
+			SearchIndex:      documentSearchIndexRepo,
 			CaseFiles:        caseFileRepo,
 			Storage:          storage,
 			Extractor:        textExtractor,
@@ -268,8 +285,9 @@ func BuildApp(ctx context.Context) (*App, error) {
 			Metadata:  documentMetadataRepo,
 		},
 		DeleteDocument: documentapp.DeleteDocument{
-			Documents: documentRepo,
-			Storage:   storage,
+			Documents:   documentRepo,
+			SearchIndex: documentSearchIndexRepo,
+			Storage:     storage,
 		},
 		ReviewDocument: documentapp.ReviewDocument{
 			Documents: documentRepo,
@@ -277,8 +295,10 @@ func BuildApp(ctx context.Context) (*App, error) {
 		ExtractDocumentText: extractDocumentText,
 
 		SearchDocuments: documentapp.SearchDocuments{
-			DocumentContents: documentContentRepo,
+			SearchIndex: documentSearchIndexRepo,
 		},
+
+		BackfillDocumentSearchIndex: backfillDocumentSearchIndex,
 
 		GetDocumentDetail: documentapp.GetDocumentDetail{
 			Documents:        documentRepo,

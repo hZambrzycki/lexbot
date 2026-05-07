@@ -55,3 +55,17 @@ type DocumentEventRepository interface {
 	ListByCaseFileID(ctx context.Context, caseFileID shared.ID, reviewStatus string) ([]querymodels.CaseFileEventResult, error)
 	ListUpcoming(ctx context.Context, fromDate string, caseFileID shared.ID, eventType string, reviewStatus string) ([]querymodels.CaseFileEventResult, error)
 }
+
+type DocumentSearchIndexRepository interface {
+	UpsertDocument(
+		ctx context.Context,
+		documentID string,
+		caseFileID string,
+		originalName string,
+		content string,
+		documentType string,
+		legalArea string,
+	) error
+	DeleteDocument(ctx context.Context, documentID string) error
+	Search(ctx context.Context, query string, caseFileID string, limit int) ([]querymodels.SearchDocumentResult, error)
+}

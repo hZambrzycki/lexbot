@@ -16,7 +16,7 @@ type SearchDocumentsInput struct {
 }
 
 type SearchDocuments struct {
-	DocumentContents ports.DocumentContentRepository
+	SearchIndex ports.DocumentSearchIndexRepository
 }
 
 func (uc SearchDocuments) Execute(ctx context.Context, in SearchDocumentsInput) ([]querymodels.SearchDocumentResult, error) {
@@ -31,14 +31,18 @@ func (uc SearchDocuments) Execute(ctx context.Context, in SearchDocumentsInput) 
 	}
 
 	caseFileID := strings.TrimSpace(in.CaseFileID)
-	if caseFileID == "" {
-		return uc.DocumentContents.SearchByText(ctx, query, limit)
+	if caseFileID != "" {
+		parsedCaseFileID := shared.NewID(caseFileID)
+		if parsedCaseFileID == "" {
+			return nil, shared.ErrInvalidAssociation
+		}
+
+		caseFileID = parsedCaseFileID.String()
 	}
 
-	parsedCaseFileID := shared.NewID(caseFileID)
-	if parsedCaseFileID == "" {
-		return nil, shared.ErrInvalidAssociation
+	if uc.SearchIndex == nil {
+		return []querymodels.SearchDocumentResult{}, nil
 	}
 
-	return uc.DocumentContents.SearchByTextByCaseFile(ctx, parsedCaseFileID.String(), query, limit)
+	return uc.SearchIndex.Search(ctx, query, caseFileID, limit)
 }

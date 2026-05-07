@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { normalizeSearchText } from "@/lib/search-normalization";
 
 type Props = {
   text: string;
@@ -13,54 +14,109 @@ type TextPart = {
   matchIndex?: number;
 };
 
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
+type MatchRange = {
+  start: number;
+  end: number;
+};
 
 function getSearchTerms(query: string): string[] {
   const terms = query
     .trim()
     .split(/\s+/)
-    .map((term) => term.trim())
+    .map((term) => normalizeSearchText(term))
     .filter(Boolean);
 
   return Array.from(new Set(terms));
 }
 
-function buildParts(text: string, query: string): TextPart[] {
+function buildNormalizedIndex(text: string) {
+  let normalized = "";
+  const indexMap: number[] = [];
+
+  for (let index = 0; index < text.length; index += 1) {
+    const normalizedChar = normalizeSearchText(text[index]);
+
+    for (let innerIndex = 0; innerIndex < normalizedChar.length; innerIndex += 1) {
+      normalized += normalizedChar[innerIndex];
+      indexMap.push(index);
+    }
+  }
+
+  return { normalized, indexMap };
+}
+
+function findMatchRanges(text: string, query: string): MatchRange[] {
   const terms = getSearchTerms(query);
 
   if (terms.length === 0) {
+    return [];
+  }
+
+  const { normalized, indexMap } = buildNormalizedIndex(text);
+  const ranges: MatchRange[] = [];
+
+  for (const term of terms.sort((a, b) => b.length - a.length)) {
+    let searchFrom = 0;
+
+    while (searchFrom < normalized.length) {
+      const foundAt = normalized.indexOf(term, searchFrom);
+
+      if (foundAt === -1) break;
+
+      const start = indexMap[foundAt];
+      const end = (indexMap[foundAt + term.length - 1] ?? start) + 1;
+
+      ranges.push({ start, end });
+      searchFrom = foundAt + term.length;
+    }
+  }
+
+  return ranges
+    .sort((a, b) => a.start - b.start || b.end - a.end)
+    .filter((range, index, sorted) => {
+      const previous = sorted[index - 1];
+
+      if (!previous) return true;
+
+      return range.start >= previous.end;
+    });
+}
+
+function buildParts(text: string, query: string): TextPart[] {
+  const ranges = findMatchRanges(text, query);
+
+  if (ranges.length === 0) {
     return [{ value: text, isMatch: false }];
   }
 
-  const pattern = terms
-    .sort((a, b) => b.length - a.length)
-    .map(escapeRegExp)
-    .join("|");
+  const parts: TextPart[] = [];
+  let cursor = 0;
 
-  const regex = new RegExp(`(${pattern})`, "gi");
-  const rawParts = text.split(regex);
-
-  let matchIndex = 0;
-  const lowerTerms = terms.map((term) => term.toLowerCase());
-
-  return rawParts.map((part) => {
-    const isMatch = lowerTerms.includes(part.toLowerCase());
-
-    if (!isMatch) {
-      return { value: part, isMatch: false };
+  ranges.forEach((range, matchIndex) => {
+    if (range.start > cursor) {
+      parts.push({
+        value: text.slice(cursor, range.start),
+        isMatch: false,
+      });
     }
 
-    const currentIndex = matchIndex;
-    matchIndex += 1;
-
-    return {
-      value: part,
+    parts.push({
+      value: text.slice(range.start, range.end),
       isMatch: true,
-      matchIndex: currentIndex,
-    };
+      matchIndex,
+    });
+
+    cursor = range.end;
   });
+
+  if (cursor < text.length) {
+    parts.push({
+      value: text.slice(cursor),
+      isMatch: false,
+    });
+  }
+
+  return parts;
 }
 
 export function HighlightedText({ text, query }: Props) {

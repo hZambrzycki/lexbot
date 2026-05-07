@@ -38,6 +38,7 @@ type ImportDocument struct {
 	Documents        ports.DocumentRepository
 	DocumentContents ports.DocumentContentRepository
 	Metadata         ports.DocumentMetadataRepository
+	SearchIndex      ports.DocumentSearchIndexRepository
 	CaseFiles        ports.CaseFileRepository
 	Storage          ports.FileStorage
 	Extractor        ports.TextExtractor
@@ -81,6 +82,7 @@ func (uc ImportDocument) Execute(ctx context.Context, in ImportDocumentInput) (I
 				Existing: existing,
 			}
 		}
+
 		if !errors.Is(err, shared.ErrNotFound) {
 			_ = uc.Storage.DeleteDocument(ctx, documentID.String())
 			return ImportDocumentResult{}, err
@@ -138,8 +140,14 @@ func (uc ImportDocument) Execute(ctx context.Context, in ImportDocumentInput) (I
 			textExtracted = true
 
 			if strings.TrimSpace(content) != "" {
+				documentType := "unknown"
+				legalArea := "unknown"
+
 				if uc.Metadata != nil {
 					classification := classifyDocumentMetadata(content)
+
+					documentType = classification.DocumentType
+					legalArea = classification.LegalArea
 
 					metadata, err := document.NewMetadata(
 						doc.ID,
@@ -151,6 +159,21 @@ func (uc ImportDocument) Execute(ctx context.Context, in ImportDocumentInput) (I
 						if err := uc.Metadata.Save(ctx, metadata); err == nil {
 							metadataAnalyzed = true
 						}
+					}
+				}
+
+				if uc.SearchIndex != nil {
+					if err := uc.SearchIndex.UpsertDocument(
+						ctx,
+						doc.ID.String(),
+						doc.CaseFileID.String(),
+						doc.OriginalName,
+						content,
+						documentType,
+						legalArea,
+					); err != nil {
+						_ = uc.Storage.DeleteDocument(ctx, documentID.String())
+						return ImportDocumentResult{}, err
 					}
 				}
 

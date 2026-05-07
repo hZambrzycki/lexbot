@@ -3,6 +3,8 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"lexbox/internal/infrastructure/search"
+	"strings"
 	"testing"
 )
 
@@ -119,6 +121,104 @@ func TestDocumentContentRepository_SearchByTextByCaseFile(t *testing.T) {
 	}
 }
 
+func TestDocumentContentRepository_SearchByText_IsAccentInsensitive(t *testing.T) {
+	t.Parallel()
+
+	db := mustOpenTestDB(t)
+	repo := NewDocumentContentRepository(db)
+
+	createDocumentsSchemaForSearchTests(t, db)
+
+	ctx := context.Background()
+
+	insertSearchFixture(t, ctx, db,
+		"doc-1", "case-1", "automatizacion.txt",
+		"Documento sobre automatización procesal y ejecución de tareas jurídicas.",
+	)
+
+	results, err := repo.SearchByText(ctx, "automatizacion ejecucion", 10)
+	if err != nil {
+		t.Fatalf("SearchByText: %v", err)
+	}
+
+	if len(results) != 1 {
+		t.Fatalf("expected 1 accent-insensitive result, got %d", len(results))
+	}
+
+	if results[0].DocumentID != "doc-1" {
+		t.Fatalf("expected document_id doc-1, got %s", results[0].DocumentID)
+	}
+
+	assertContains(t, results[0].Snippet, "[automatización]")
+	assertContains(t, results[0].Snippet, "[ejecución]")
+}
+
+func TestDocumentContentRepository_SearchByText_MultiTermSnippetHighlight(t *testing.T) {
+	t.Parallel()
+
+	db := mustOpenTestDB(t)
+	repo := NewDocumentContentRepository(db)
+
+	createDocumentsSchemaForSearchTests(t, db)
+
+	ctx := context.Background()
+
+	insertSearchFixture(t, ctx, db,
+		"doc-1", "case-1", "sentencia_empresa.txt",
+		"La empresa interpuso recurso contra la sentencia dictada en el procedimiento.",
+	)
+
+	results, err := repo.SearchByText(ctx, "empresa sentencia", 10)
+	if err != nil {
+		t.Fatalf("SearchByText: %v", err)
+	}
+
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+
+	assertContains(t, results[0].Snippet, "[empresa]")
+	assertContains(t, results[0].Snippet, "[sentencia]")
+}
+
+func TestDocumentContentRepository_SearchByText_IsCaseInsensitive(t *testing.T) {
+	t.Parallel()
+
+	db := mustOpenTestDB(t)
+	repo := NewDocumentContentRepository(db)
+
+	createDocumentsSchemaForSearchTests(t, db)
+
+	ctx := context.Background()
+
+	insertSearchFixture(t, ctx, db,
+		"doc-1", "case-1", "demanda_despido.txt",
+		"Demanda por despido disciplinario.",
+	)
+
+	results, err := repo.SearchByText(ctx, "DEMANDA DESPIDO", 10)
+	if err != nil {
+		t.Fatalf("SearchByText: %v", err)
+	}
+
+	if len(results) != 1 {
+		t.Fatalf("expected 1 case-insensitive result, got %d", len(results))
+	}
+
+	assertContains(t, strings.ToLower(results[0].Snippet), "[demanda]")
+	assertContains(t, strings.ToLower(results[0].Snippet), "[despido]")
+}
+
+func TestDocumentContentRepository_SearchByText_DeduplicatesEquivalentAccentTerms(t *testing.T) {
+	t.Parallel()
+
+	terms := search.SplitTerms("ejecución ejecucion EJECUCIÓN")
+
+	if len(terms) != 1 {
+		t.Fatalf("expected 1 deduplicated term, got %d: %#v", len(terms), terms)
+	}
+}
+
 func mustOpenTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 
@@ -180,5 +280,13 @@ func insertSearchFixture(t *testing.T, ctx context.Context, db *sql.DB, document
 	`, documentID, content)
 	if err != nil {
 		t.Fatalf("insert document content: %v", err)
+	}
+}
+
+func assertContains(t *testing.T, value string, expected string) {
+	t.Helper()
+
+	if !strings.Contains(value, expected) {
+		t.Fatalf("expected %q to contain %q", value, expected)
 	}
 }

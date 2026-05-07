@@ -20,8 +20,9 @@ type DeleteDocumentResult struct {
 }
 
 type DeleteDocument struct {
-	Documents ports.DocumentRepository
-	Storage   ports.FileStorage
+	Documents   ports.DocumentRepository
+	SearchIndex ports.DocumentSearchIndexRepository
+	Storage     ports.FileStorage
 }
 
 func (uc DeleteDocument) Execute(ctx context.Context, in DeleteDocumentInput) (DeleteDocumentResult, error) {
@@ -37,6 +38,12 @@ func (uc DeleteDocument) Execute(ctx context.Context, in DeleteDocumentInput) (D
 
 	if err := uc.Documents.Delete(ctx, documentID); err != nil {
 		return DeleteDocumentResult{}, err
+	}
+
+	if uc.SearchIndex != nil {
+		if err := uc.SearchIndex.DeleteDocument(ctx, doc.ID.String()); err != nil {
+			return DeleteDocumentResult{}, err
+		}
 	}
 
 	if uc.Storage != nil && strings.TrimSpace(doc.StoragePath) != "" {

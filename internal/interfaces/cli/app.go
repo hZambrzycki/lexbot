@@ -18,43 +18,44 @@ import (
 type App struct {
 	Out io.Writer
 
-	CreateClient               clientapp.CreateClient
-	GetClient                  clientapp.GetClient
-	ListClients                clientapp.ListClients
-	CreateCaseFile             casefileapp.CreateCaseFile
-	UpdateCaseFileConfig       casefileapp.UpdateCaseFileConfig
-	ListCaseFiles              casefileapp.ListCaseFiles
-	ListCaseFilesByClient      casefileapp.ListCaseFilesByClient
-	GetCaseFileDashboard       casefileapp.GetCaseFileDashboard
-	AddNote                    noteapp.AddNote
-	ListNotesByCaseFile        noteapp.ListNotesByCaseFile
-	AttachDocument             documentapp.AttachDocument
-	ImportDocument             documentapp.ImportDocument
-	ListDocumentsByCaseFile    documentapp.ListDocumentsByCaseFile
-	ExtractDocumentText        documentapp.ExtractDocumentText
-	SearchDocuments            documentapp.SearchDocuments
-	GetDocumentDetail          documentapp.GetDocumentDetail
-	GetCaseFileDetail          casefileapp.GetCaseFileDetail
-	StorageAudit               documentapp.StorageAudit
-	StorageCleanOrphans        documentapp.StorageCleanOrphans
-	MimeNormalize              documentapp.MimeNormalize
-	VerifyDocument             documentapp.VerifyDocument
-	VerifyAllDocuments         documentapp.VerifyAllDocuments
-	ReindexDocument            documentapp.ReindexDocument
-	ReindexAllDocuments        documentapp.ReindexAllDocuments
-	AnalyzeDocumentMetadata    documentapp.AnalyzeDocumentMetadata
-	AnalyzeAllDocumentMetadata documentapp.AnalyzeAllDocumentMetadata
-	AnalyzeDocumentEvents      documentapp.AnalyzeDocumentEvents
-	AnalyzeAllDocumentEvents   documentapp.AnalyzeAllDocumentEvents
-	ListDocumentEvents         documentapp.ListDocumentEvents
-	ListEventsByCaseFile       documentapp.ListEventsByCaseFile
-	ListUpcomingEvents         documentapp.ListUpcomingEvents
-	ExportUpcomingEventsICS    documentapp.ExportUpcomingEventsICS
-	MarkEventReviewed          documentapp.MarkEventReviewed
-	MarkEventResolved          documentapp.MarkEventResolved
-	ReopenEvent                documentapp.ReopenEvent
-	FixCaseFile                casefileapp.FixCaseFile
-	AuditCaseFile              casefileapp.AuditCaseFile
+	CreateClient                clientapp.CreateClient
+	GetClient                   clientapp.GetClient
+	ListClients                 clientapp.ListClients
+	CreateCaseFile              casefileapp.CreateCaseFile
+	UpdateCaseFileConfig        casefileapp.UpdateCaseFileConfig
+	ListCaseFiles               casefileapp.ListCaseFiles
+	ListCaseFilesByClient       casefileapp.ListCaseFilesByClient
+	GetCaseFileDashboard        casefileapp.GetCaseFileDashboard
+	AddNote                     noteapp.AddNote
+	ListNotesByCaseFile         noteapp.ListNotesByCaseFile
+	AttachDocument              documentapp.AttachDocument
+	ImportDocument              documentapp.ImportDocument
+	ListDocumentsByCaseFile     documentapp.ListDocumentsByCaseFile
+	ExtractDocumentText         documentapp.ExtractDocumentText
+	SearchDocuments             documentapp.SearchDocuments
+	GetDocumentDetail           documentapp.GetDocumentDetail
+	GetCaseFileDetail           casefileapp.GetCaseFileDetail
+	StorageAudit                documentapp.StorageAudit
+	StorageCleanOrphans         documentapp.StorageCleanOrphans
+	MimeNormalize               documentapp.MimeNormalize
+	VerifyDocument              documentapp.VerifyDocument
+	VerifyAllDocuments          documentapp.VerifyAllDocuments
+	ReindexDocument             documentapp.ReindexDocument
+	ReindexAllDocuments         documentapp.ReindexAllDocuments
+	AnalyzeDocumentMetadata     documentapp.AnalyzeDocumentMetadata
+	AnalyzeAllDocumentMetadata  documentapp.AnalyzeAllDocumentMetadata
+	AnalyzeDocumentEvents       documentapp.AnalyzeDocumentEvents
+	AnalyzeAllDocumentEvents    documentapp.AnalyzeAllDocumentEvents
+	ListDocumentEvents          documentapp.ListDocumentEvents
+	ListEventsByCaseFile        documentapp.ListEventsByCaseFile
+	ListUpcomingEvents          documentapp.ListUpcomingEvents
+	ExportUpcomingEventsICS     documentapp.ExportUpcomingEventsICS
+	MarkEventReviewed           documentapp.MarkEventReviewed
+	MarkEventResolved           documentapp.MarkEventResolved
+	ReopenEvent                 documentapp.ReopenEvent
+	FixCaseFile                 casefileapp.FixCaseFile
+	AuditCaseFile               casefileapp.AuditCaseFile
+	BackfillDocumentSearchIndex documentapp.BackfillDocumentSearchIndex
 }
 
 func (a App) Run(ctx context.Context, args []string) error {
@@ -143,6 +144,8 @@ func (a App) Run(ctx context.Context, args []string) error {
 		return a.runListUpcomingEvents(ctx, args[1:])
 	case "events-export-ics":
 		return a.runExportUpcomingEventsICS(ctx, args[1:])
+	case "search-index-backfill":
+		return a.runBackfillDocumentSearchIndex(ctx, args[1:])
 	default:
 		return fmt.Errorf("unknown command: %s", args[0])
 	}
@@ -185,6 +188,8 @@ func (a App) printHelp() {
 	fmt.Fprintln(a.Out, `  document-verify-all --case "<caseFileID>" --verbose`)
 	fmt.Fprintln(a.Out, `  search "<query>"`)
 	fmt.Fprintln(a.Out, `  search "<query>" --case "<caseFileID>"`)
+	fmt.Fprintln(a.Out, `  search-index-backfill`)
+	fmt.Fprintln(a.Out, `  search-index-backfill --case "<caseFileID>"`)
 	fmt.Fprintln(a.Out, `  case-get "<caseFileID>"`)
 	fmt.Fprintln(a.Out, `  case-dashboard "<caseFileID>"`)
 	fmt.Fprintln(a.Out, `  case-fix "<caseFileID>"`)
@@ -2132,6 +2137,47 @@ func (a App) runReopenEvent(ctx context.Context, args []string) error {
 	fmt.Fprintf(a.Out, "Reviewed at: %s\n", result.ReviewedAt)
 	fmt.Fprintf(a.Out, "Resolved at: %s\n", result.ResolvedAt)
 	fmt.Fprintf(a.Out, "Resolution note: %s\n", result.ResolutionNote)
+
+	return nil
+}
+
+func (a App) runBackfillDocumentSearchIndex(ctx context.Context, args []string) error {
+	caseFileID := ""
+
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--case":
+			if i+1 >= len(args) {
+				return fmt.Errorf(`usage: search-index-backfill [--case "<caseFileID>"]`)
+			}
+
+			caseFileID = strings.TrimSpace(args[i+1])
+			i++
+
+		default:
+			return fmt.Errorf(`usage: search-index-backfill [--case "<caseFileID>"]`)
+		}
+	}
+
+	result, err := a.BackfillDocumentSearchIndex.Execute(ctx, documentapp.BackfillDocumentSearchIndexInput{
+		CaseFileID: caseFileID,
+	})
+	if err != nil {
+		return err
+	}
+
+	if caseFileID != "" {
+		fmt.Fprintf(a.Out, "Document search index backfill for case file %s\n", caseFileID)
+	} else {
+		fmt.Fprintln(a.Out, "Document search index backfill")
+	}
+
+	fmt.Fprintf(a.Out, "Scanned: %d\n", result.Scanned)
+	fmt.Fprintf(a.Out, "Indexed: %d\n", result.Indexed)
+	fmt.Fprintf(a.Out, "Skipped: %d\n", result.Skipped)
+	fmt.Fprintf(a.Out, "  No extracted text: %d\n", result.SkippedNoExtractedText)
+	fmt.Fprintf(a.Out, "  No metadata: %d\n", result.SkippedNoMetadata)
+	fmt.Fprintf(a.Out, "Errors: %d\n", result.Errors)
 
 	return nil
 }

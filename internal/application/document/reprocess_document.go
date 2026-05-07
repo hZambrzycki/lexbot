@@ -1,6 +1,11 @@
 package documentapp
 
-import "context"
+import (
+	"context"
+
+	"lexbox/internal/application/ports"
+	"lexbox/internal/domain/shared"
+)
 
 type ReprocessDocumentInput struct {
 	DocumentID string
@@ -16,12 +21,25 @@ type ReprocessDocumentResult struct {
 }
 
 type ReprocessDocument struct {
+	Documents               ports.DocumentRepository
+	DocumentContents        ports.DocumentContentRepository
+	SearchIndex             ports.DocumentSearchIndexRepository
 	ReindexDocument         ReindexDocument
 	AnalyzeDocumentMetadata AnalyzeDocumentMetadata
 	AnalyzeDocumentEvents   AnalyzeDocumentEvents
 }
 
 func (uc ReprocessDocument) Execute(ctx context.Context, in ReprocessDocumentInput) (ReprocessDocumentResult, error) {
+	documentID := shared.NewID(in.DocumentID)
+	if documentID == "" {
+		return ReprocessDocumentResult{}, shared.ErrInvalidID
+	}
+
+	doc, err := uc.Documents.GetByID(ctx, documentID)
+	if err != nil {
+		return ReprocessDocumentResult{}, err
+	}
+
 	reindexResult, err := uc.ReindexDocument.Execute(ctx, ReindexDocumentInput{
 		DocumentID: in.DocumentID,
 	})
@@ -29,11 +47,30 @@ func (uc ReprocessDocument) Execute(ctx context.Context, in ReprocessDocumentInp
 		return ReprocessDocumentResult{}, err
 	}
 
-	_, err = uc.AnalyzeDocumentMetadata.Execute(ctx, AnalyzeDocumentMetadataInput{
+	metadataResult, err := uc.AnalyzeDocumentMetadata.Execute(ctx, AnalyzeDocumentMetadataInput{
 		DocumentID: in.DocumentID,
 	})
 	if err != nil {
 		return ReprocessDocumentResult{}, err
+	}
+
+	if uc.SearchIndex != nil && uc.DocumentContents != nil {
+		content, err := uc.DocumentContents.GetByDocumentID(ctx, doc.ID.String())
+		if err != nil {
+			return ReprocessDocumentResult{}, err
+		}
+
+		if err := uc.SearchIndex.UpsertDocument(
+			ctx,
+			doc.ID.String(),
+			doc.CaseFileID.String(),
+			doc.OriginalName,
+			content,
+			metadataResult.DocumentType,
+			metadataResult.LegalArea,
+		); err != nil {
+			return ReprocessDocumentResult{}, err
+		}
 	}
 
 	eventsResult, err := uc.AnalyzeDocumentEvents.Execute(ctx, AnalyzeDocumentEventsInput{
