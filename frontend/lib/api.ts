@@ -10,6 +10,7 @@ import type {
   EventActionResponse,
   EventItem,
   Note,
+  GlobalSearchResult,
   DocumentSearchResult,
 } from "@/lib/types";
 
@@ -273,13 +274,129 @@ export async function reviewDocument(
 export async function searchDocuments(
   caseFileId: string,
   query: string,
+  limit = 20,
 ): Promise<DocumentSearchResult[]> {
   const params = new URLSearchParams();
 
-  params.set("case_file_id", caseFileId);
+  if (caseFileId.trim().length > 0) {
+    params.set("case_file_id", caseFileId);
+  }
+
   params.set("q", query);
+  params.set("limit", String(limit));
 
   return apiFetch<DocumentSearchResult[]>(
     `/documents/search?${params.toString()}`,
   );
+}
+
+const GLOBAL_NAVIGATION_RESULTS: GlobalSearchResult[] = [
+  {
+    type: "navigation",
+    id: "home",
+    title: "Ir al inicio",
+    subtitle: "Navegación",
+    href: "/",
+    score: 10000,
+  },
+  {
+    type: "navigation",
+    id: "agenda",
+    title: "Abrir agenda",
+    subtitle: "Navegación",
+    href: "/agenda",
+    score: 10000,
+  },
+  {
+    type: "navigation",
+    id: "case-files",
+    title: "Abrir expedientes",
+    subtitle: "Navegación",
+    href: "/case-files",
+    score: 10000,
+  },
+];
+
+const GLOBAL_ACTION_RESULTS: GlobalSearchResult[] = [
+  {
+    type: "action",
+    id: "create-case-file",
+    title: "Crear expediente",
+    subtitle: "Acción rápida",
+    href: "/case-files/new",
+    score: 12000,
+  },
+  {
+    type: "action",
+    id: "open-agenda",
+    title: "Ver agenda procesal",
+    subtitle: "Acción rápida",
+    href: "/agenda",
+    score: 12000,
+  },
+  {
+    type: "action",
+    id: "pending-documents",
+    title: "Ver documentos pendientes de revisión",
+    subtitle: "Acción rápida",
+    href: "/case-files",
+    score: 11500,
+  },
+];
+
+function normalizeGlobalSearchText(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function getNavigationResults(query: string): GlobalSearchResult[] {
+  const normalizedQuery = normalizeGlobalSearchText(query);
+
+  if (normalizedQuery.length < 2) {
+    return [];
+  }
+
+  return GLOBAL_NAVIGATION_RESULTS.filter((item) => {
+    const haystack = normalizeGlobalSearchText(
+      `${item.title} ${item.subtitle} ${item.id}`,
+    );
+
+    return haystack.includes(normalizedQuery);
+  });
+}
+
+export async function globalSearch(
+  query: string,
+): Promise<GlobalSearchResult[]> {
+  const actionResults = getActionResults(query);
+  const navigationResults = getNavigationResults(query);
+
+  const backendResults = await apiFetch<GlobalSearchResult[]>(
+    `/search/global?q=${encodeURIComponent(query)}&limit=8`,
+  );
+
+  return [
+    ...actionResults,
+    ...navigationResults,
+    ...backendResults,
+  ].sort((a, b) => b.score - a.score);
+}
+
+function getActionResults(query: string): GlobalSearchResult[] {
+  const normalizedQuery = normalizeGlobalSearchText(query);
+
+  if (normalizedQuery.length < 2) {
+    return [];
+  }
+
+  return GLOBAL_ACTION_RESULTS.filter((item) => {
+    const haystack = normalizeGlobalSearchText(
+      `${item.title} ${item.subtitle} ${item.id}`,
+    );
+
+    return haystack.includes(normalizedQuery);
+  });
 }

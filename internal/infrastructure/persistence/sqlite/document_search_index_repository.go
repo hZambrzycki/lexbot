@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"strings"
 
 	"lexbox/internal/application/querymodels"
 	searchinfra "lexbox/internal/infrastructure/search"
@@ -80,61 +81,116 @@ func (r *DocumentSearchIndexRepository) Search(
 	ctx context.Context,
 	query string,
 	caseFileID string,
+	filters querymodels.SearchDocumentFilters,
 	limit int,
 ) ([]querymodels.SearchDocumentResult, error) {
 	ftsQuery := searchinfra.BuildFTS5Query(query)
-	if ftsQuery == "" {
+
+	where := make([]string, 0)
+	args := make([]any, 0)
+
+	if ftsQuery != "" {
+		where = append(where, "document_search_index MATCH ?")
+		args = append(args, ftsQuery)
+	}
+
+	if caseFileID != "" {
+		where = append(where, "document_search_index.case_file_id = ?")
+		args = append(args, caseFileID)
+	}
+
+	if filters.DocumentType != "" {
+		where = append(where, "document_search_index.document_type = ?")
+		args = append(args, filters.DocumentType)
+	}
+
+	if filters.LegalArea != "" {
+		where = append(where, "document_search_index.legal_area = ?")
+		args = append(args, filters.LegalArea)
+	}
+
+	if filters.ReviewStatus != "" {
+		where = append(where, "documents.review_status = ?")
+		args = append(args, filters.ReviewStatus)
+	}
+
+	if filters.DocType != "" {
+		switch filters.DocType {
+		case "pdf":
+			where = append(where, "documents.mime_type = ?")
+			args = append(args, "application/pdf")
+		case "docx":
+			where = append(where, "documents.mime_type = ?")
+			args = append(args, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+		case "txt":
+			where = append(where, "documents.mime_type = ?")
+			args = append(args, "text/plain")
+		case "md":
+			where = append(where, "documents.mime_type IN (?, ?)")
+			args = append(args, "text/markdown", "text/x-markdown")
+		}
+	}
+
+	if filters.Has != "" {
+		switch filters.Has {
+		case "events":
+			where = append(where, `EXISTS (
+				SELECT 1
+				FROM document_events
+				WHERE document_events.document_id = document_search_index.document_id
+			)`)
+		case "no_events":
+			where = append(where, `NOT EXISTS (
+				SELECT 1
+				FROM document_events
+				WHERE document_events.document_id = document_search_index.document_id
+			)`)
+		case "text":
+			where = append(where, `EXISTS (
+				SELECT 1
+				FROM document_contents
+				WHERE document_contents.document_id = document_search_index.document_id
+				AND TRIM(document_contents.content) <> ''
+			)`)
+		case "no_text":
+			where = append(where, `NOT EXISTS (
+				SELECT 1
+				FROM document_contents
+				WHERE document_contents.document_id = document_search_index.document_id
+				AND TRIM(document_contents.content) <> ''
+			)`)
+		}
+	}
+
+	if len(where) == 0 {
 		return []querymodels.SearchDocumentResult{}, nil
 	}
 
-	var (
-		rows *sql.Rows
-		err  error
-	)
+	args = append(args, limit)
 
-	if caseFileID != "" {
-		rows, err = r.db.QueryContext(ctx, `
-			SELECT
-				document_id,
-				original_name,
-				case_file_id,
-				snippet(
-					document_search_index,
-					3,
-					'[',
-					']',
-					'...',
-					24
-				) AS snippet,
-				bm25(document_search_index) AS score
-			FROM document_search_index
-			WHERE document_search_index MATCH ?
-			AND case_file_id = ?
-			ORDER BY score
-			LIMIT ?
-		`, ftsQuery, caseFileID, limit)
-	} else {
-		rows, err = r.db.QueryContext(ctx, `
-			SELECT
-				document_id,
-				original_name,
-				case_file_id,
-				snippet(
-					document_search_index,
-					3,
-					'[',
-					']',
-					'...',
-					24
-				) AS snippet,
-				bm25(document_search_index) AS score
-			FROM document_search_index
-			WHERE document_search_index MATCH ?
-			ORDER BY score
-			LIMIT ?
-		`, ftsQuery, limit)
-	}
+	sqlQuery := `
+		SELECT
+			document_search_index.document_id,
+			document_search_index.original_name,
+			document_search_index.case_file_id,
+			snippet(
+				document_search_index,
+				3,
+				'[',
+				']',
+				'...',
+				24
+			) AS snippet,
+			bm25(document_search_index) AS score
+		FROM document_search_index
+		JOIN documents
+			ON documents.id = document_search_index.document_id
+		WHERE ` + strings.Join(where, " AND ") + `
+		ORDER BY score
+		LIMIT ?
+	`
 
+	rows, err := r.db.QueryContext(ctx, sqlQuery, args...)
 	if err != nil {
 		return nil, err
 	}

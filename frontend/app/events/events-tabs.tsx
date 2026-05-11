@@ -13,6 +13,60 @@ type Props = {
   baseUrl: string;
 };
 
+function normalize(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function eventTypeLabel(value: string) {
+  switch (value) {
+    case "deadline":
+      return "Plazo";
+    case "notification":
+      return "Notificación";
+    case "requirement":
+      return "Requerimiento";
+    case "hearing":
+      return "Vista";
+    case "appearance":
+      return "Comparecencia";
+    case "filing":
+      return "Presentación";
+    default:
+      return value || "Otro";
+  }
+}
+
+function matchesQuery(item: EventItem, query: string) {
+  const normalizedQuery = normalize(query);
+
+  if (!normalizedQuery) return true;
+
+  const haystack = normalize(
+    [
+      item.event_type,
+      eventTypeLabel(item.event_type),
+      item.event_date,
+      item.source_text,
+      item.original_name,
+      item.case_file_reference,
+      item.case_file_title,
+      item.status,
+      item.priority,
+      item.review_status,
+      item.computation,
+      item.trigger_text,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+
+  return haystack.includes(normalizedQuery);
+}
+
 function countByStatus(items: EventItem[], status: string) {
   return items.filter((item) => item.status === status).length;
 }
@@ -36,15 +90,11 @@ function nextMainAlert(items: EventItem[]) {
     (item) => item.status === "overdue" && item.priority === "critical",
   );
 
-  if (urgent) {
-    return `Plazo urgente vencido desde ${urgent.event_date}`;
-  }
+  if (urgent) return `Plazo urgente vencido desde ${urgent.event_date}`;
 
   const today = items.find((item) => item.status === "today");
 
-  if (today) {
-    return `Actuación con vencimiento hoy: ${today.event_date}`;
-  }
+  if (today) return `Actuación con vencimiento hoy: ${today.event_date}`;
 
   const upcoming = items.find(
     (item) =>
@@ -52,9 +102,7 @@ function nextMainAlert(items: EventItem[]) {
       (item.priority === "critical" || item.priority === "high"),
   );
 
-  if (upcoming) {
-    return `Próximo hito prioritario: ${upcoming.event_date}`;
-  }
+  if (upcoming) return `Próximo hito prioritario: ${upcoming.event_date}`;
 
   return "No hay alertas procesales prioritarias pendientes.";
 }
@@ -90,7 +138,7 @@ function tabContent(tab: Tab) {
         body: "Eventos que todavía requieren revisión, actuación o resolución.",
         intro:
           "Esta es la bandeja principal de trabajo. Aquí queda lo que todavía hay que revisar, atender o resolver.",
-        empty: "No hay eventos pendientes.",
+        empty: "No hay eventos pendientes con estos filtros.",
       };
 
     case "reviewed":
@@ -100,7 +148,7 @@ function tabContent(tab: Tab) {
         body: "Eventos ya comprobados, pendientes de resolver definitivamente o reabrir.",
         intro:
           "Aquí quedan los hitos ya comprobados. Es una zona intermedia antes de resolverlos definitivamente.",
-        empty: "No hay eventos revisados pendientes de resolver.",
+        empty: "No hay eventos revisados con estos filtros.",
       };
 
     case "resolved":
@@ -110,7 +158,7 @@ function tabContent(tab: Tab) {
         body: "Histórico de hitos cerrados. Puedes reabrirlos si necesitan nueva revisión.",
         intro:
           "Aquí queda el histórico cerrado, con posibilidad de reapertura si el hito vuelve a necesitar revisión.",
-        empty: "Todavía no hay eventos resueltos.",
+        empty: "No hay eventos resueltos con estos filtros.",
       };
   }
 }
@@ -153,8 +201,13 @@ export function EventsTabs({
   baseUrl,
 }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>("pending");
+  const [query, setQuery] = useState("");
+  const [eventType, setEventType] = useState("all");
+  const [temporalStatus, setTemporalStatus] = useState("all");
+  const [priority, setPriority] = useState("all");
+  const [relativeOnly, setRelativeOnly] = useState(false);
 
-  const activeEvents = useMemo(() => {
+  const rawActiveEvents = useMemo(() => {
     switch (activeTab) {
       case "reviewed":
         return reviewedEvents;
@@ -164,6 +217,31 @@ export function EventsTabs({
         return pendingEvents;
     }
   }, [activeTab, pendingEvents, reviewedEvents, resolvedEvents]);
+
+  const activeEvents = useMemo(() => {
+    return rawActiveEvents.filter((item) => {
+      const matchesText = matchesQuery(item, query);
+
+      const matchesType =
+        eventType === "all" || item.event_type === eventType;
+
+      const matchesTemporal =
+        temporalStatus === "all" || item.status === temporalStatus;
+
+      const matchesPriority =
+        priority === "all" || item.priority === priority;
+
+      const matchesRelative = !relativeOnly || item.date_kind === "relative";
+
+      return (
+        matchesText &&
+        matchesType &&
+        matchesTemporal &&
+        matchesPriority &&
+        matchesRelative
+      );
+    });
+  }, [rawActiveEvents, query, eventType, temporalStatus, priority, relativeOnly]);
 
   const activeContent = tabContent(activeTab);
   const labels = metricLabels(activeTab);
@@ -175,6 +253,21 @@ export function EventsTabs({
   const upcomingCount = countByStatus(activeEvents, "upcoming");
 
   const mainAlert = nextMainAlert(pendingEvents);
+
+  const hasFilters =
+    query.trim() ||
+    eventType !== "all" ||
+    temporalStatus !== "all" ||
+    priority !== "all" ||
+    relativeOnly;
+
+  function clearFilters() {
+    setQuery("");
+    setEventType("all");
+    setTemporalStatus("all");
+    setPriority("all");
+    setRelativeOnly(false);
+  }
 
   return (
     <div className="space-y-8">
@@ -244,6 +337,122 @@ export function EventsTabs({
       </section>
 
       <section className="rounded-2xl border border-neutral-800 bg-neutral-950/70 p-5">
+        <div className="grid gap-3 lg:grid-cols-[1fr_auto_auto_auto_auto]">
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Buscar: subsanación, vista, requerimiento, expediente..."
+            className="rounded-2xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-red-900/70"
+          />
+
+          <select
+            value={eventType}
+            onChange={(event) => setEventType(event.target.value)}
+            className="rounded-2xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm text-neutral-300 outline-none focus:border-red-900/70"
+          >
+            <option value="all">Todos los tipos</option>
+            <option value="deadline">Plazos</option>
+            <option value="requirement">Requerimientos</option>
+            <option value="hearing">Vistas</option>
+            <option value="appearance">Comparecencias</option>
+            <option value="notification">Notificaciones</option>
+            <option value="filing">Presentaciones</option>
+          </select>
+
+          <select
+            value={temporalStatus}
+            onChange={(event) => setTemporalStatus(event.target.value)}
+            className="rounded-2xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm text-neutral-300 outline-none focus:border-red-900/70"
+          >
+            <option value="all">Todos los estados</option>
+            <option value="overdue">Vencidos</option>
+            <option value="today">Hoy</option>
+            <option value="upcoming">Próximos</option>
+          </select>
+
+          <select
+            value={priority}
+            onChange={(event) => setPriority(event.target.value)}
+            className="rounded-2xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm text-neutral-300 outline-none focus:border-red-900/70"
+          >
+            <option value="all">Todas las prioridades</option>
+            <option value="critical">Crítica</option>
+            <option value="high">Alta</option>
+            <option value="medium">Media</option>
+            <option value="low">Baja</option>
+          </select>
+
+          {hasFilters ? (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="rounded-2xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm font-medium text-neutral-400 transition hover:border-neutral-700 hover:bg-neutral-900 hover:text-neutral-100"
+            >
+              Limpiar
+            </button>
+          ) : null}
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setRelativeOnly((current) => !current)}
+            className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+              relativeOnly
+                ? "border-red-800 bg-red-950/40 text-red-100"
+                : "border-neutral-800 bg-neutral-950 text-neutral-400 hover:border-neutral-700 hover:text-neutral-100"
+            }`}
+          >
+            Solo plazos relativos
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setEventType("deadline");
+              setTemporalStatus("overdue");
+              setPriority("all");
+              setRelativeOnly(false);
+            }}
+            className="rounded-full border border-neutral-800 bg-neutral-950 px-3 py-1 text-xs font-medium text-neutral-400 transition hover:border-red-900/60 hover:bg-red-950/20 hover:text-red-100"
+          >
+            Plazos vencidos
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setEventType("requirement");
+              setTemporalStatus("all");
+              setPriority("all");
+              setRelativeOnly(false);
+            }}
+            className="rounded-full border border-neutral-800 bg-neutral-950 px-3 py-1 text-xs font-medium text-neutral-400 transition hover:border-red-900/60 hover:bg-red-950/20 hover:text-red-100"
+          >
+            Requerimientos
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setEventType("hearing");
+              setTemporalStatus("upcoming");
+              setPriority("all");
+              setRelativeOnly(false);
+            }}
+            className="rounded-full border border-neutral-800 bg-neutral-950 px-3 py-1 text-xs font-medium text-neutral-400 transition hover:border-red-900/60 hover:bg-red-950/20 hover:text-red-100"
+          >
+            Vistas próximas
+          </button>
+        </div>
+
+        <p className="mt-3 text-xs text-neutral-500">
+          Mostrando {activeEvents.length} de {rawActiveEvents.length} eventos en
+          esta pestaña.
+        </p>
+      </section>
+
+      <section className="rounded-2xl border border-neutral-800 bg-neutral-950/70 p-5">
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
             <h2 className="text-xl font-semibold text-neutral-50">
@@ -269,22 +478,6 @@ export function EventsTabs({
             >
               Exportar solo plazos
             </a>
-          </div>
-        </div>
-
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4 text-sm leading-6 text-neutral-400">
-            <span className="font-medium text-neutral-200">
-              Agenda global:
-            </span>{" "}
-            incluye los eventos pendientes detectados en todos los expedientes.
-          </div>
-
-          <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4 text-sm leading-6 text-neutral-400">
-            <span className="font-medium text-neutral-200">
-              Solo plazos:
-            </span>{" "}
-            incluye únicamente vencimientos y plazos procesales pendientes.
           </div>
         </div>
       </section>
@@ -334,25 +527,38 @@ function MetricCard({
   label: string;
   tone: "red" | "redSoft" | "yellow" | "orange" | "green";
 }) {
-  const className = {
-    red: "border-red-800/70 bg-red-950/20 text-red-100 text-red-300/80",
-    redSoft: "border-red-900/60 bg-red-950/10 text-red-100 text-red-300/80",
-    yellow:
-      "border-yellow-800/70 bg-yellow-950/20 text-yellow-100 text-yellow-300/80",
-    orange:
-      "border-orange-800/70 bg-orange-950/20 text-orange-100 text-orange-300/80",
-    green:
-      "border-emerald-800/70 bg-emerald-950/20 text-emerald-100 text-emerald-300/80",
+  const styles = {
+    red: {
+      box: "border-red-800/70 bg-red-950/20",
+      number: "text-red-100",
+      label: "text-red-300/80",
+    },
+    redSoft: {
+      box: "border-red-900/60 bg-red-950/10",
+      number: "text-red-100",
+      label: "text-red-300/80",
+    },
+    yellow: {
+      box: "border-yellow-800/70 bg-yellow-950/20",
+      number: "text-yellow-100",
+      label: "text-yellow-300/80",
+    },
+    orange: {
+      box: "border-orange-800/70 bg-orange-950/20",
+      number: "text-orange-100",
+      label: "text-orange-300/80",
+    },
+    green: {
+      box: "border-emerald-800/70 bg-emerald-950/20",
+      number: "text-emerald-100",
+      label: "text-emerald-300/80",
+    },
   }[tone];
 
-  const [borderBg, numberColor, labelColor] = className
-    .split(" text-")
-    .map((part, index) => (index === 0 ? part : `text-${part}`));
-
   return (
-    <div className={`rounded-2xl border p-4 ${borderBg}`}>
-      <p className={`text-2xl font-semibold ${numberColor}`}>{value}</p>
-      <p className={`mt-1 text-xs uppercase tracking-wide ${labelColor}`}>
+    <div className={`rounded-2xl border p-4 ${styles.box}`}>
+      <p className={`text-2xl font-semibold ${styles.number}`}>{value}</p>
+      <p className={`mt-1 text-xs uppercase tracking-wide ${styles.label}`}>
         {label}
       </p>
     </div>

@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	documentapp "lexbox/internal/application/document"
@@ -11,6 +12,7 @@ type reviewDocumentRequest struct {
 	ReviewStatus string `json:"review_status"`
 	ReviewNote   string `json:"review_note"`
 }
+
 type DocumentHandler struct {
 	GetDocumentDetail documentapp.GetDocumentDetail
 	DeleteDocument    documentapp.DeleteDocument
@@ -28,11 +30,11 @@ func (h DocumentHandler) Register(mux *http.ServeMux) {
 
 		h.handleSearchDocuments(w, r)
 	})
+
 	mux.HandleFunc("/documents/", func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/documents/")
 		parts := strings.Split(path, "/")
 
-		// 🔹 /documents/{id}
 		if len(parts) == 1 {
 			documentID := strings.TrimSpace(parts[0])
 			if documentID == "" {
@@ -51,7 +53,6 @@ func (h DocumentHandler) Register(mux *http.ServeMux) {
 			return
 		}
 
-		// 🔹 /documents/{id}/reprocess
 		if len(parts) == 2 && parts[1] == "reprocess" {
 			documentID := strings.TrimSpace(parts[0])
 			if documentID == "" {
@@ -68,7 +69,6 @@ func (h DocumentHandler) Register(mux *http.ServeMux) {
 			return
 		}
 
-		// 🔹 /documents/{id}/review
 		if len(parts) == 2 && parts[1] == "review" {
 			documentID := strings.TrimSpace(parts[0])
 			if documentID == "" {
@@ -89,7 +89,11 @@ func (h DocumentHandler) Register(mux *http.ServeMux) {
 	})
 }
 
-func (h DocumentHandler) handleGetDocument(w http.ResponseWriter, r *http.Request, documentID string) {
+func (h DocumentHandler) handleGetDocument(
+	w http.ResponseWriter,
+	r *http.Request,
+	documentID string,
+) {
 	result, err := h.GetDocumentDetail.Execute(r.Context(), documentapp.GetDocumentDetailInput{
 		DocumentID: documentID,
 	})
@@ -101,7 +105,11 @@ func (h DocumentHandler) handleGetDocument(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, toDocumentDetailResponse(result))
 }
 
-func (h DocumentHandler) handleDeleteDocument(w http.ResponseWriter, r *http.Request, documentID string) {
+func (h DocumentHandler) handleDeleteDocument(
+	w http.ResponseWriter,
+	r *http.Request,
+	documentID string,
+) {
 	result, err := h.DeleteDocument.Execute(r.Context(), documentapp.DeleteDocumentInput{
 		DocumentID: documentID,
 	})
@@ -113,7 +121,11 @@ func (h DocumentHandler) handleDeleteDocument(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, result)
 }
 
-func (h DocumentHandler) handleReprocessDocument(w http.ResponseWriter, r *http.Request, documentID string) {
+func (h DocumentHandler) handleReprocessDocument(
+	w http.ResponseWriter,
+	r *http.Request,
+	documentID string,
+) {
 	result, err := h.ReprocessDocument.Execute(r.Context(), documentapp.ReprocessDocumentInput{
 		DocumentID: documentID,
 	})
@@ -125,7 +137,11 @@ func (h DocumentHandler) handleReprocessDocument(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusOK, result)
 }
 
-func (h DocumentHandler) handleReviewDocument(w http.ResponseWriter, r *http.Request, documentID string) {
+func (h DocumentHandler) handleReviewDocument(
+	w http.ResponseWriter,
+	r *http.Request,
+	documentID string,
+) {
 	var body reviewDocumentRequest
 
 	if err := readJSON(r, &body); err != nil {
@@ -143,7 +159,6 @@ func (h DocumentHandler) handleReviewDocument(w http.ResponseWriter, r *http.Req
 			ReviewNote:   body.ReviewNote,
 		},
 	)
-
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
 			"error": err.Error(),
@@ -157,11 +172,12 @@ func (h DocumentHandler) handleReviewDocument(w http.ResponseWriter, r *http.Req
 func (h DocumentHandler) handleSearchDocuments(w http.ResponseWriter, r *http.Request) {
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	caseFileID := strings.TrimSpace(r.URL.Query().Get("case_file_id"))
+	limit := parseSearchLimit(r.URL.Query().Get("limit"))
 
 	result, err := h.SearchDocuments.Execute(r.Context(), documentapp.SearchDocumentsInput{
 		Query:      query,
 		CaseFileID: caseFileID,
-		Limit:      20,
+		Limit:      limit,
 	})
 	if err != nil {
 		writeError(w, err)
@@ -169,4 +185,29 @@ func (h DocumentHandler) handleSearchDocuments(w http.ResponseWriter, r *http.Re
 	}
 
 	writeJSON(w, http.StatusOK, toSearchDocumentResultsResponse(result))
+}
+
+func parseSearchLimit(rawLimit string) int {
+	const defaultLimit = 20
+	const maxLimit = 100
+
+	rawLimit = strings.TrimSpace(rawLimit)
+	if rawLimit == "" {
+		return defaultLimit
+	}
+
+	limit, err := strconv.Atoi(rawLimit)
+	if err != nil {
+		return defaultLimit
+	}
+
+	if limit <= 0 {
+		return defaultLimit
+	}
+
+	if limit > maxLimit {
+		return maxLimit
+	}
+
+	return limit
 }

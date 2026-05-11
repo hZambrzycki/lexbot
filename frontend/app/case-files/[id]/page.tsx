@@ -7,6 +7,7 @@ import { DocumentsList } from "./documents-list";
 import { NoteForm } from "./note-form";
 import { DeleteNoteButton } from "./delete-note-button";
 import { displayCaseType, displayStatus } from "@/lib/document-display";
+import { ProceduralTimeline } from "@/app/components/procedural-timeline";
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -162,6 +163,8 @@ export default async function CaseFileDetailPage({
       {activeTab === "resumen" && (
         <>
           <CaseDashboard dashboard={dashboard} />
+
+          <ProceduralTimeline events={events} caseFileId={caseFile.id} />
 
           <section className="grid gap-3 md:grid-cols-3">
             <Stat label="Pendientes" value={pendingReviewDocuments} />

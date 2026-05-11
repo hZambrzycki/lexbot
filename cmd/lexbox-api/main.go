@@ -51,9 +51,14 @@ func main() {
 		SearchDocuments:   appServices.SearchDocuments,
 	}
 
+	searchHandler := httpapi.SearchHandler{
+		GlobalSearch: appServices.GlobalSearch,
+	}
+
 	server.RegisterRoutes(caseFileHandler.Register)
 	server.RegisterRoutes(eventHandler.Register)
 	server.RegisterRoutes(documentHandler.Register)
+	server.RegisterRoutes(searchHandler.Register)
 
 	log.Fatal(server.Start(":8080"))
 }

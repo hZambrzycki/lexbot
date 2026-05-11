@@ -192,3 +192,21 @@ export type DocumentDetail = {
   has_events: boolean;
   events: DocumentEventDetail[];
 };
+
+export type GlobalSearchResultType =
+  | "case_file"
+  | "document"
+  | "event"
+  | "note"
+  | "navigation"
+  | "action";
+
+export type GlobalSearchResult = {
+  type: GlobalSearchResultType;
+  id: string;
+  title: string;
+  subtitle: string;
+  href: string;
+  snippet?: string;
+  score: number;
+};

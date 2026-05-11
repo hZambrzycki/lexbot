@@ -1,13 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+
+import { DocumentToast } from "@/app/components/document-toast";
 import type { DocumentReviewStatus, DocumentSummary } from "@/lib/types";
-import { DocumentListItem } from "./document-list-item";
+
+import { DocumentEmptyState } from "./document-empty-state";
+import { DocumentResultsList } from "./document-results-list";
 import { DocumentSearchControls } from "./document-search-controls";
+import { DocumentSearchStatus } from "./document-search-status";
 import { useDocumentActions } from "./use-document-actions";
 import { useDocumentSearch } from "./use-document-search";
-import { DocumentToast } from "@/app/components/document-toast";
-
 
 type Props = {
   caseFileId: string;
@@ -48,6 +51,30 @@ export function DocumentsList({ caseFileId, documents }: Props) {
     searchInputRef.current?.focus();
   }, []);
 
+  useEffect(() => {
+    function handleShortcut(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+
+      const isTyping =
+        target?.tagName === "INPUT" ||
+        target?.tagName === "TEXTAREA" ||
+        target?.isContentEditable;
+
+      if (isTyping) return;
+
+      if (event.key === "/") {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    }
+
+    window.addEventListener("keydown", handleShortcut);
+
+    return () => {
+      window.removeEventListener("keydown", handleShortcut);
+    };
+  }, []);
+
   async function handleReview(
     documentId: string,
     status: DocumentReviewStatus,
@@ -80,66 +107,49 @@ export function DocumentsList({ caseFileId, documents }: Props) {
           onClear={clearFilters}
         />
 
-        <p className="mt-4 text-xs text-neutral-500">
-          Mostrando {filteredDocuments.length} de {documents.length} documentos
-          por filtros visibles.
-        </p>
-
-        {canSearchContent && contentSearchLoading ? (
-          <p className="mt-2 text-xs text-neutral-500">
-            Buscando dentro del texto extraído...
-          </p>
-        ) : null}
-
-        {canSearchContent && contentResults.length > 0 ? (
-          <p className="mt-2 text-xs text-yellow-200">
-            {contentResults.length === 1
-              ? "1 documento contiene coincidencias dentro del texto extraído."
-              : `${contentResults.length} documentos contienen coincidencias dentro del texto extraído.`}
-          </p>
-        ) : null}
+        <DocumentSearchStatus
+          visibleCount={filteredDocuments.length}
+          totalCount={documents.length}
+          canSearchContent={canSearchContent}
+          contentSearchLoading={contentSearchLoading}
+          contentResultsCount={contentResults.length}
+        />
 
         {filteredDocuments.length === 0 ? (
-          <p className="mt-4 rounded-xl border border-neutral-800 bg-neutral-900 p-4 text-sm text-neutral-400">
-            {canSearchContent && contentResults.length > 0
-              ? "No hay coincidencias por nombre, tipo o estado, pero sí hay resultados dentro del contenido."
-              : "No hay documentos para este filtro, búsqueda u ordenación."}
-          </p>
+          <DocumentEmptyState
+            canSearchContent={canSearchContent}
+            contentResultsCount={contentResults.length}
+          />
         ) : (
-          <ul className="mt-4 divide-y divide-neutral-800 rounded-2xl border border-neutral-800 bg-neutral-950/40">
-            {filteredDocuments.map((summary) => (
-              <DocumentListItem
-                key={summary.document.id}
-                caseFileId={caseFileId}
-                summary={summary}
-                trimmedQuery={trimmedQuery}
-                contentMatch={contentMatchMap.get(summary.document.id)}
-                isBusy={busyId === summary.document.id}
-                errorDraftId={errorDraftId}
-                deleteDraftId={deleteDraftId}
-                errorNote={errorNote}
-                onReprocess={handleReprocess}
-                onReview={handleReview}
-                onDelete={handleDelete}
-                onOpenErrorDraft={(documentId, note) => {
-                  setErrorDraftId(documentId);
-                  setDeleteDraftId(null);
-                  setErrorNote(note);
-                }}
-                onCloseErrorDraft={() => {
-                  setErrorDraftId(null);
-                  setErrorNote("");
-                }}
-                onErrorNoteChange={setErrorNote}
-                onOpenDeleteDraft={(documentId) => {
-                  setDeleteDraftId(documentId);
-                  setErrorDraftId(null);
-                  setErrorNote("");
-                }}
-                onCloseDeleteDraft={() => setDeleteDraftId(null)}
-              />
-            ))}
-          </ul>
+          <DocumentResultsList
+            caseFileId={caseFileId}
+            documents={filteredDocuments}
+            trimmedQuery={trimmedQuery}
+            contentMatchMap={contentMatchMap}
+            busyId={busyId}
+            errorDraftId={errorDraftId}
+            deleteDraftId={deleteDraftId}
+            errorNote={errorNote}
+            onReprocess={handleReprocess}
+            onReview={handleReview}
+            onDelete={handleDelete}
+            onOpenErrorDraft={(documentId, note) => {
+              setErrorDraftId(documentId);
+              setDeleteDraftId(null);
+              setErrorNote(note);
+            }}
+            onCloseErrorDraft={() => {
+              setErrorDraftId(null);
+              setErrorNote("");
+            }}
+            onErrorNoteChange={setErrorNote}
+            onOpenDeleteDraft={(documentId) => {
+              setDeleteDraftId(documentId);
+              setErrorDraftId(null);
+              setErrorNote("");
+            }}
+            onCloseDeleteDraft={() => setDeleteDraftId(null)}
+          />
         )}
       </div>
 

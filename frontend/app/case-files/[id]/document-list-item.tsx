@@ -1,10 +1,6 @@
 import Link from "next/link";
+
 import { DocumentReviewBadge } from "@/app/components/document-review-badge";
-import type {
-  DocumentReviewStatus,
-  DocumentSearchResult,
-  DocumentSummary,
-} from "@/lib/types";
 import {
   displayDocumentType,
   displayLegalArea,
@@ -12,6 +8,12 @@ import {
   documentEventsLabel,
   documentExtractionLabel,
 } from "@/lib/document-display";
+import type {
+  DocumentReviewStatus,
+  DocumentSearchResult,
+  DocumentSummary,
+} from "@/lib/types";
+
 import {
   actionButtonClass,
   documentHealth,
@@ -54,7 +56,7 @@ function renderHighlightedSnippet(snippet: string) {
     return (
       <mark
         key={`${part}-${index}`}
-        className="rounded-md border border-yellow-700/40 bg-yellow-900/40 px-1 text-yellow-100"
+        className="rounded-md border border-yellow-700/50 bg-yellow-400/10 px-1 font-medium text-yellow-100"
       >
         {part.slice(1, -1)}
       </mark>
@@ -127,9 +129,19 @@ export function DocumentListItem({
         </div>
 
         {contentMatch ? (
-          <p className="mt-2 rounded-xl border border-yellow-900/40 bg-yellow-950/20 p-3 text-xs leading-5 text-yellow-100/90">
-            {renderHighlightedSnippet(contentMatch.snippet)}
-          </p>
+          <div className="mt-3 rounded-2xl border border-yellow-900/40 bg-gradient-to-br from-yellow-950/30 to-neutral-950 p-4 text-sm leading-6 text-yellow-50/90 shadow-inner">
+            <div className="mb-2 flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-yellow-300/80">
+              <span>Coincidencia documental</span>
+
+              {contentMatch.score ? (
+                <span className="rounded-full border border-yellow-900/40 px-2 py-0.5 text-[10px] normal-case tracking-normal text-yellow-200/70">
+                  relevancia {contentMatch.score}
+                </span>
+              ) : null}
+            </div>
+
+            <p>{renderHighlightedSnippet(contentMatch.snippet)}</p>
+          </div>
         ) : null}
 
         {doc.review_note ? (

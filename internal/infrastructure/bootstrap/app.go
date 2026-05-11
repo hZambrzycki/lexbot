@@ -62,6 +62,7 @@ type App struct {
 	GetEvent                    documentapp.GetEvent
 	ReprocessDocument           documentapp.ReprocessDocument
 	BackfillDocumentSearchIndex documentapp.BackfillDocumentSearchIndex
+	GlobalSearch                documentapp.GlobalSearch
 }
 
 func BuildApp(ctx context.Context) (*App, error) {
@@ -243,6 +244,15 @@ func BuildApp(ctx context.Context) (*App, error) {
 
 		ListCaseFilesByClient: casefileapp.ListCaseFilesByClient{
 			CaseFiles: caseFileRepo,
+		},
+
+		GlobalSearch: documentapp.GlobalSearch{
+			SearchDocuments: documentapp.SearchDocuments{
+				SearchIndex: documentSearchIndexRepo,
+			},
+			CaseFiles: caseFileRepo,
+			Events:    documentEventRepo,
+			Notes:     noteRepo,
 		},
 
 		GetCaseFileDashboard: getCaseFileDashboard,

@@ -12,6 +12,7 @@ type fakeDocumentSearchIndexRepository struct {
 
 	searchQuery      string
 	searchCaseFileID string
+	searchFilters    querymodels.SearchDocumentFilters
 	searchLimit      int
 }
 
@@ -27,7 +28,10 @@ func (f *fakeDocumentSearchIndexRepository) UpsertDocument(
 	return nil
 }
 
-func (f *fakeDocumentSearchIndexRepository) DeleteDocument(ctx context.Context, documentID string) error {
+func (f *fakeDocumentSearchIndexRepository) DeleteDocument(
+	ctx context.Context,
+	documentID string,
+) error {
 	return nil
 }
 
@@ -35,10 +39,12 @@ func (f *fakeDocumentSearchIndexRepository) Search(
 	ctx context.Context,
 	query string,
 	caseFileID string,
+	filters querymodels.SearchDocumentFilters,
 	limit int,
 ) ([]querymodels.SearchDocumentResult, error) {
 	f.searchQuery = query
 	f.searchCaseFileID = caseFileID
+	f.searchFilters = filters
 	f.searchLimit = limit
 
 	return f.results, nil
@@ -167,5 +173,57 @@ func TestSearchDocuments_Execute_DefaultLimit(t *testing.T) {
 
 	if repo.searchLimit != 20 {
 		t.Fatalf("expected default limit 20, got %d", repo.searchLimit)
+	}
+}
+
+func TestSearchDocuments_Execute_ParsesDSLFilters(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeDocumentSearchIndexRepository{
+		results: []querymodels.SearchDocumentResult{
+			{DocumentID: "doc-3"},
+		},
+	}
+
+	uc := SearchDocuments{
+		SearchIndex: repo,
+	}
+
+	results, err := uc.Execute(context.Background(), SearchDocumentsInput{
+		Query: "type:demanda area:laboral despido",
+		Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+
+	if repo.searchQuery != "despido" {
+		t.Fatalf(
+			"expected free query %q, got %q",
+			"despido",
+			repo.searchQuery,
+		)
+	}
+
+	if repo.searchFilters.DocumentType != "demanda" {
+		t.Fatalf(
+			"expected document type demanda, got %q",
+			repo.searchFilters.DocumentType,
+		)
+	}
+
+	if repo.searchFilters.LegalArea != "laboral" {
+		t.Fatalf(
+			"expected legal area laboral, got %q",
+			repo.searchFilters.LegalArea,
+		)
+	}
+
+	if repo.searchLimit != 10 {
+		t.Fatalf("unexpected limit: %d", repo.searchLimit)
 	}
 }

@@ -1,15 +1,8 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
-import {
-  usePathname,
-  useRouter,
-  useSearchParams,
-} from "next/navigation";
-import type {
-  DocumentSearchResult,
-  DocumentSummary,
-} from "@/lib/types";
+import { useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import type { DocumentSearchResult, DocumentSummary } from "@/lib/types";
 import { searchDocuments } from "@/lib/api";
 import {
   displayDocumentType,
@@ -25,7 +18,6 @@ import {
   normalizeText,
   reviewRank,
 } from "./document-list-utils";
-import { useState } from "react";
 
 type UseDocumentSearchArgs = {
   caseFileId: string;
@@ -37,6 +29,101 @@ type UpdateUrlArgs = {
   query?: string;
   sort?: DocumentSort;
 };
+
+type ParsedDocumentSearchQuery = {
+  freeQuery: string;
+  documentType: string;
+  legalArea: string;
+  reviewStatus: string;
+  docType: string;
+  has: string;
+};
+
+function parseDocumentSearchQuery(query: string): ParsedDocumentSearchQuery {
+  const freeTerms: string[] = [];
+  let documentType = "";
+  let legalArea = "";
+  let reviewStatus = "";
+  let docType = "";
+  let has = "";
+
+  for (const token of query.trim().split(/\s+/)) {
+    const [rawKey, rawValue] = token.split(":");
+
+    if (!rawKey || !rawValue) {
+      freeTerms.push(token);
+      continue;
+    }
+
+    const key = rawKey.toLowerCase();
+    const value = rawValue.toLowerCase();
+
+    switch (key) {
+      case "type":
+        documentType = value;
+        break;
+      case "area":
+        legalArea = value;
+        break;
+      case "review":
+        reviewStatus = value;
+        break;
+      case "doc":
+        docType = value;
+        break;
+      case "has":
+        has = value;
+        break;
+      default:
+        freeTerms.push(token);
+    }
+  }
+
+  return {
+    freeQuery: freeTerms.join(" "),
+    documentType,
+    legalArea,
+    reviewStatus,
+    docType,
+    has,
+  };
+}
+
+function matchesDocType(mimeType: string, docType: string): boolean {
+  const normalizedMime = normalizeText(mimeType);
+  const normalizedDocType = normalizeText(docType);
+
+  switch (normalizedDocType) {
+    case "pdf":
+      return normalizedMime === "application/pdf";
+    case "docx":
+      return normalizedMime ===
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    case "txt":
+      return normalizedMime === "text/plain";
+    case "md":
+      return normalizedMime === "text/markdown" || normalizedMime === "text/x-markdown";
+    default:
+      return true;
+  }
+}
+
+function matchesHasFilter(summary: DocumentSummary, has: string): boolean {
+  const normalizedHas = normalizeText(has);
+
+  switch (normalizedHas) {
+    case "events":
+      return (summary.event_count ?? 0) > 0;
+    case "no_events":
+      return (summary.event_count ?? 0) === 0;
+    case "text":
+      return summary.has_extracted_text;
+    case "no_text":
+      return !summary.has_extracted_text;
+    default:
+      return true;
+  }
+}
 
 export function useDocumentSearch({
   caseFileId,
@@ -55,12 +142,14 @@ export function useDocumentSearch({
   const query = searchParams.get("q") ?? "";
   const sort = normalizeSort(searchParams.get("sort"));
 
+  const parsedQuery = useMemo(() => parseDocumentSearchQuery(query), [query]);
+
   const trimmedQuery = query.trim();
-  const normalizedQuery = normalizeText(query);
-  const canSearchContent = trimmedQuery.length >= 3;
+  const normalizedFreeQuery = normalizeText(parsedQuery.freeQuery);
+  const canSearchContent = parsedQuery.freeQuery.trim().length >= 3;
 
   useEffect(() => {
-    const normalizedContentQuery = query.trim();
+    const normalizedContentQuery = parsedQuery.freeQuery.trim();
 
     if (normalizedContentQuery.length < 3) {
       const timeout = window.setTimeout(() => {
@@ -98,7 +187,7 @@ export function useDocumentSearch({
       cancelled = true;
       window.clearTimeout(timeout);
     };
-  }, [caseFileId, query]);
+  }, [caseFileId, parsedQuery.freeQuery]);
 
   function updateUrl(next: UpdateUrlArgs) {
     const params = new URLSearchParams(searchParams.toString());
@@ -213,6 +302,38 @@ export function useDocumentSearch({
     }
   }, [documents, filter]);
 
+  const byDslFilters = useMemo(() => {
+    return byFilter.filter((summary) => {
+      const matchesType =
+        !parsedQuery.documentType ||
+        normalizeText(summary.document_type) === normalizeText(parsedQuery.documentType);
+
+      const matchesArea =
+        !parsedQuery.legalArea ||
+        normalizeText(summary.legal_area) === normalizeText(parsedQuery.legalArea);
+
+      const matchesReview =
+        !parsedQuery.reviewStatus ||
+        normalizeText(summary.document.review_status) === normalizeText(parsedQuery.reviewStatus);
+
+      const matchesDoc =
+        !parsedQuery.docType ||
+        matchesDocType(summary.document.mime_type, parsedQuery.docType);
+
+      const matchesHas =
+        !parsedQuery.has || matchesHasFilter(summary, parsedQuery.has);
+
+      return matchesType && matchesArea && matchesReview && matchesDoc && matchesHas;
+    });
+  }, [
+    byFilter,
+    parsedQuery.documentType,
+    parsedQuery.legalArea,
+    parsedQuery.reviewStatus,
+    parsedQuery.docType,
+    parsedQuery.has,
+  ]);
+
   const contentMatchMap = useMemo(() => {
     const map = new Map<string, DocumentSearchResult>();
 
@@ -224,9 +345,11 @@ export function useDocumentSearch({
   }, [contentResults]);
 
   const byQuery = useMemo(() => {
-    if (!normalizedQuery) return byFilter;
+    if (!normalizedFreeQuery) {
+      return byDslFilters;
+    }
 
-    return byFilter.filter((summary) => {
+    return byDslFilters.filter((summary) => {
       const doc = summary.document;
       const health = documentHealth(summary);
 
@@ -246,12 +369,12 @@ export function useDocumentSearch({
         .map(normalizeText)
         .join(" ");
 
-      const matchesMetadata = haystack.includes(normalizedQuery);
+      const matchesMetadata = haystack.includes(normalizedFreeQuery);
       const matchesContent = contentMatchMap.has(doc.id);
 
       return matchesMetadata || matchesContent;
     });
-  }, [byFilter, contentMatchMap, normalizedQuery]);
+  }, [byDslFilters, contentMatchMap, normalizedFreeQuery]);
 
   const filteredDocuments = useMemo(() => {
     return [...byQuery].sort((a, b) => {

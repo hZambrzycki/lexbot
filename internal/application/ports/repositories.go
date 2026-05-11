@@ -67,5 +67,23 @@ type DocumentSearchIndexRepository interface {
 		legalArea string,
 	) error
 	DeleteDocument(ctx context.Context, documentID string) error
-	Search(ctx context.Context, query string, caseFileID string, limit int) ([]querymodels.SearchDocumentResult, error)
+	Search(
+		ctx context.Context,
+		query string,
+		caseFileID string,
+		filters querymodels.SearchDocumentFilters,
+		limit int,
+	) ([]querymodels.SearchDocumentResult, error)
+}
+
+type CaseFileSearchRepository interface {
+	SearchCaseFiles(ctx context.Context, query string, limit int) ([]querymodels.GlobalSearchResult, error)
+}
+
+type EventSearchRepository interface {
+	SearchEvents(ctx context.Context, query string, limit int) ([]querymodels.GlobalSearchResult, error)
+}
+
+type NoteSearchRepository interface {
+	SearchNotes(ctx context.Context, query string, limit int) ([]querymodels.GlobalSearchResult, error)
 }

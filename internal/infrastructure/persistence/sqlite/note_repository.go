@@ -7,6 +7,9 @@ import (
 
 	"lexbox/internal/domain/note"
 	"lexbox/internal/domain/shared"
+
+	"lexbox/internal/application/querymodels"
+	searchinfra "lexbox/internal/infrastructure/search"
 )
 
 type NoteRepository struct {
@@ -82,4 +85,53 @@ func (r *NoteRepository) Delete(ctx context.Context, id shared.ID) error {
 
 	_, err := r.db.ExecContext(ctx, query, id.String())
 	return err
+}
+
+func (r *NoteRepository) SearchNotes(ctx context.Context, rawQuery string, limit int) ([]querymodels.GlobalSearchResult, error) {
+	query := "%" + searchinfra.NormalizeText(rawQuery) + "%"
+
+	const sqlQuery = `
+		SELECT
+			n.id,
+			n.case_file_id,
+			n.title,
+			n.content,
+			cf.reference,
+			cf.title
+		FROM notes n
+		INNER JOIN case_files cf ON cf.id = n.case_file_id
+		WHERE
+			lower(n.title) LIKE ?
+			OR lower(n.content) LIKE ?
+		ORDER BY n.updated_at DESC
+		LIMIT ?
+	`
+
+	rows, err := r.db.QueryContext(ctx, sqlQuery, query, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	results := []querymodels.GlobalSearchResult{}
+
+	for rows.Next() {
+		var id, caseFileID, title, content, reference, caseTitle string
+
+		if err := rows.Scan(&id, &caseFileID, &title, &content, &reference, &caseTitle); err != nil {
+			return nil, err
+		}
+
+		results = append(results, querymodels.GlobalSearchResult{
+			Type:     "note",
+			ID:       id,
+			Title:    title,
+			Subtitle: "Nota · " + reference + " · " + caseTitle,
+			Href:     "/case-files/" + caseFileID + "?tab=notas",
+			Snippet:  content,
+			Score:    60,
+		})
+	}
+
+	return results, rows.Err()
 }

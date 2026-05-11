@@ -459,3 +459,31 @@ func toDocumentDetailResponse(in documentapp.GetDocumentDetailResult) DocumentDe
 		Events:               events,
 	}
 }
+
+type GlobalSearchResultResponse struct {
+	Type     string `json:"type"`
+	ID       string `json:"id"`
+	Title    string `json:"title"`
+	Subtitle string `json:"subtitle"`
+	Href     string `json:"href"`
+	Snippet  string `json:"snippet,omitempty"`
+	Score    int    `json:"score"`
+}
+
+func toGlobalSearchResultsResponse(items []querymodels.GlobalSearchResult) []GlobalSearchResultResponse {
+	out := make([]GlobalSearchResultResponse, 0, len(items))
+
+	for _, item := range items {
+		out = append(out, GlobalSearchResultResponse{
+			Type:     item.Type,
+			ID:       item.ID,
+			Title:    item.Title,
+			Subtitle: item.Subtitle,
+			Href:     item.Href,
+			Snippet:  item.Snippet,
+			Score:    item.Score,
+		})
+	}
+
+	return out
+}

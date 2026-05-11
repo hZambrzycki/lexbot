@@ -44,5 +44,13 @@ func (uc SearchDocuments) Execute(ctx context.Context, in SearchDocumentsInput) 
 		return []querymodels.SearchDocumentResult{}, nil
 	}
 
-	return uc.SearchIndex.Search(ctx, query, caseFileID, limit)
+	parsedQuery := ParseSearchDocumentsQuery(query)
+
+	return uc.SearchIndex.Search(
+		ctx,
+		parsedQuery.Terms,
+		caseFileID,
+		parsedQuery.Filters,
+		limit,
+	)
 }

@@ -4,10 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"time"
-
+	"lexbox/internal/application/querymodels"
 	"lexbox/internal/domain/casefile"
 	"lexbox/internal/domain/shared"
+	searchinfra "lexbox/internal/infrastructure/search"
+	"strings"
+	"time"
 )
 
 type CaseFileRepository struct {
@@ -319,4 +321,51 @@ func (r *CaseFileRepository) Update(ctx context.Context, cf casefile.CaseFile) e
 	)
 
 	return err
+}
+
+func (r *CaseFileRepository) SearchCaseFiles(ctx context.Context, rawQuery string, limit int) ([]querymodels.GlobalSearchResult, error) {
+	query := "%" + searchinfra.NormalizeText(rawQuery) + "%"
+
+	const sqlQuery = `
+		SELECT id, reference, title, type, status, description
+		FROM case_files
+		WHERE
+			lower(reference) LIKE ?
+			OR lower(title) LIKE ?
+			OR lower(type) LIKE ?
+			OR lower(status) LIKE ?
+			OR lower(description) LIKE ?
+		ORDER BY updated_at DESC
+		LIMIT ?
+	`
+
+	rows, err := r.db.QueryContext(ctx, sqlQuery, query, query, query, query, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	results := []querymodels.GlobalSearchResult{}
+
+	for rows.Next() {
+		var id, reference, title, typ, status, description string
+
+		if err := rows.Scan(&id, &reference, &title, &typ, &status, &description); err != nil {
+			return nil, err
+		}
+
+		subtitle := strings.TrimSpace(reference + " · " + typ + " · " + status)
+
+		results = append(results, querymodels.GlobalSearchResult{
+			Type:     "case_file",
+			ID:       id,
+			Title:    title,
+			Subtitle: subtitle,
+			Href:     "/case-files/" + id,
+			Snippet:  description,
+			Score:    80,
+		})
+	}
+
+	return results, rows.Err()
 }

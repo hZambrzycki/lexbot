@@ -3,11 +3,11 @@ package sqlite
 import (
 	"context"
 	"database/sql"
-	"strings"
-
 	"lexbox/internal/application/querymodels"
 	"lexbox/internal/domain/document"
 	"lexbox/internal/domain/shared"
+	searchinfra "lexbox/internal/infrastructure/search"
+	"strings"
 )
 
 type DocumentEventRepository struct {
@@ -554,4 +554,58 @@ func (r *DocumentEventRepository) GetDetailByID(ctx context.Context, eventID sha
 	}
 
 	return results[0], nil
+}
+
+func (r *DocumentEventRepository) SearchEvents(ctx context.Context, rawQuery string, limit int) ([]querymodels.GlobalSearchResult, error) {
+	query := "%" + searchinfra.NormalizeText(rawQuery) + "%"
+
+	const sqlQuery = `
+		SELECT
+			de.id,
+			d.case_file_id,
+			de.event_type,
+			de.event_date,
+			de.source_text,
+			cf.reference,
+			cf.title
+		FROM document_events de
+		INNER JOIN documents d ON d.id = de.document_id
+		INNER JOIN case_files cf ON cf.id = d.case_file_id
+		WHERE
+			lower(de.event_type) LIKE ?
+			OR lower(de.source_text) LIKE ?
+			OR lower(de.event_date) LIKE ?
+			OR lower(cf.reference) LIKE ?
+			OR lower(cf.title) LIKE ?
+		ORDER BY de.event_date ASC
+		LIMIT ?
+	`
+
+	rows, err := r.db.QueryContext(ctx, sqlQuery, query, query, query, query, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	results := []querymodels.GlobalSearchResult{}
+
+	for rows.Next() {
+		var id, caseFileID, eventType, eventDate, sourceText, reference, caseTitle string
+
+		if err := rows.Scan(&id, &caseFileID, &eventType, &eventDate, &sourceText, &reference, &caseTitle); err != nil {
+			return nil, err
+		}
+
+		results = append(results, querymodels.GlobalSearchResult{
+			Type:     "event",
+			ID:       id,
+			Title:    eventType + " · " + eventDate,
+			Subtitle: "Evento · " + reference + " · " + caseTitle,
+			Href:     "/events/" + id,
+			Snippet:  sourceText,
+			Score:    70,
+		})
+	}
+
+	return results, rows.Err()
 }

@@ -156,3 +156,71 @@ export function displayStatus(value?: string) {
       return value;
   }
 }
+
+export function displayReviewStatus(value?: string): string {
+  switch (value) {
+    case "pending_review":
+    case "":
+    case undefined:
+      return "Pendiente";
+    case "reviewed":
+      return "Revisado";
+    case "error":
+      return "Error";
+    default:
+      return value;
+  }
+}
+
+export function displayHasFilter(value?: string): string {
+  switch (value) {
+    case "events":
+      return "Con hitos";
+    case "no_events":
+      return "Sin hitos";
+    case "text":
+      return "Con texto";
+    case "no_text":
+      return "Sin texto";
+    case "":
+    case undefined:
+      return "Sin filtro";
+    default:
+      return value;
+  }
+}
+
+export function displayDslDocType(value?: string): string {
+  switch (value) {
+    case "pdf":
+      return "PDF";
+    case "docx":
+      return "Word";
+    case "txt":
+      return "Texto plano";
+    case "md":
+      return "Markdown";
+    case "":
+    case undefined:
+      return "Sin formato";
+    default:
+      return value;
+  }
+}
+
+export function displayDslChipValue(key: string, value: string): string {
+  switch (key) {
+    case "type":
+      return displayDocumentType(value);
+    case "area":
+      return displayLegalArea(value);
+    case "review":
+      return displayReviewStatus(value);
+    case "has":
+      return displayHasFilter(value);
+    case "doc":
+      return displayDslDocType(value);
+    default:
+      return value;
+  }
+}
