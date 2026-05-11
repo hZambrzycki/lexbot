@@ -3,6 +3,7 @@ import { getDocument } from "@/lib/api";
 import { DeleteDocumentButton } from "./delete-document-button";
 import { ReprocessDocumentButton } from "./reprocess-document-button";
 import { HighlightedText } from "@/app/components/highlighted-text";
+import { eventRelationLabel } from "@/lib/event-relations";
 import { DocumentReviewBadge } from "@/app/components/document-review-badge";
 import { DocumentReviewActions } from "@/app/components/document-review-actions";
 import {
@@ -249,50 +250,71 @@ export default async function DocumentDetailPage({
           </div>
         ) : (
           <ul className="mt-4 space-y-3">
-            {detail.events.map((event) => (
-              <li
-                key={event.event_id}
-                className="rounded-xl border border-neutral-800 bg-neutral-900 p-4"
-              >
-                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                  <div>
-                    <p className="font-medium text-neutral-100">
-                      {displayEventType(event.event_type)} · {event.event_date}
-                    </p>
+            {detail.events.map((event) => {
+              const relation = eventRelationLabel(event);
 
-                    <p className="mt-1 text-xs text-neutral-500">
-                      {displayReviewStatus(event.review_status)}
-                    </p>
+              return (
+                <li
+                  key={event.event_id}
+                  className="rounded-xl border border-neutral-800 bg-neutral-900 p-4"
+                >
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <p className="font-medium text-neutral-100">
+                        {displayEventType(event.event_type)} ·{" "}
+                        {event.event_date}
+                      </p>
+
+                      <p className="mt-1 text-xs text-neutral-500">
+                        {displayReviewStatus(event.review_status)}
+                      </p>
+                    </div>
+
+                    <Link
+                      href={`/events/${event.event_id}`}
+                      className="inline-flex w-fit rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-xs font-medium text-neutral-100 transition hover:bg-neutral-800"
+                    >
+                      Ver hito
+                    </Link>
                   </div>
 
-                  <Link
-                    href={`/events/${event.event_id}`}
-                    className="inline-flex w-fit rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-xs font-medium text-neutral-100 transition hover:bg-neutral-800"
-                  >
-                    Ver hito
-                  </Link>
-                </div>
+                  <p className="mt-3 text-sm leading-6 text-neutral-300">
+                    “{event.source_text}”
+                  </p>
 
-                <p className="mt-3 text-sm leading-6 text-neutral-300">
-                  “{event.source_text}”
-                </p>
+                  {relation ? (
+                    <div className="mt-3 rounded-xl border border-sky-900/60 bg-sky-950/20 p-3">
+                      <p className="text-xs font-medium uppercase tracking-wide text-sky-300/80">
+                        Relación procesal
+                      </p>
 
-                <div className="mt-3 grid gap-2 text-xs text-neutral-500 md:grid-cols-2">
-                  <div>Tipo de fecha: {displayDateKind(event.date_kind)}</div>
-                  <div>Fecha base: {event.anchor_date || "—"}</div>
-                  <div>Fuente: {event.anchor_source || "—"}</div>
-                  <div>Días: {event.relative_days ?? 0}</div>
-                  <div>
-                    Cómputo:{" "}
-                    {event.is_business_days ? "días hábiles" : "días naturales"}
+                      <p className="mt-1 text-sm font-medium text-sky-100">
+                        ↳ {relation}
+                      </p>
+                    </div>
+                  ) : null}
+
+                  <div className="mt-3 grid gap-2 text-xs text-neutral-500 md:grid-cols-2">
+                    <div>Tipo de fecha: {displayDateKind(event.date_kind)}</div>
+                    <div>Fecha base: {event.anchor_date || "—"}</div>
+                    <div>Fuente: {event.anchor_source || "—"}</div>
+                    <div>Días: {event.relative_days ?? 0}</div>
+                    <div>
+                      Cómputo:{" "}
+                      {event.is_business_days
+                        ? "días hábiles"
+                        : "días naturales"}
+                    </div>
+                    <div>
+                      Día adicional: {event.add_extra_day ? "sí" : "no"}
+                    </div>
+                    <div className="md:col-span-2">
+                      Regla: {event.computation || "—"}
+                    </div>
                   </div>
-                  <div>Día adicional: {event.add_extra_day ? "sí" : "no"}</div>
-                  <div className="md:col-span-2">
-                    Regla: {event.computation || "—"}
-                  </div>
-                </div>
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

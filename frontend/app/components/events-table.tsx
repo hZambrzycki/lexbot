@@ -4,7 +4,10 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { EventItem } from "@/lib/types";
 import { EventActions } from "./event-actions";
-
+import {
+  eventRelationLabel,
+  findRelatedEvent,
+} from "@/lib/event-relations";
 export type EventsTableMode = "pending" | "reviewed" | "resolved" | "mixed";
 
 type Props = {
@@ -1076,6 +1079,8 @@ export function EventsTable({
           {groups.map((group) => {
             const item = group.representative;
             const insight = insightFor(item, mode);
+            const relation = eventRelationLabel(item, items);
+            const relatedEvent = findRelatedEvent(item, items);
             const isExpanded = expandedGroupId === group.id;
             const isGrouped = group.occurrenceCount > 1;
 
@@ -1145,6 +1150,26 @@ export function EventsTable({
                               {displayLabel(item.event_type)}
                             </p>
                           </div>
+                          {relation ? (
+                            <div className="rounded-xl border border-sky-900/60 bg-sky-950/20 p-3 md:col-span-2">
+                              <p className="text-xs font-medium uppercase tracking-wide text-sky-300/80">
+                                Relación procesal
+                              </p>
+
+                              <p className="mt-1 text-sm font-medium text-sky-100">
+                                ↳ {relation}
+                              </p>
+
+                              {relatedEvent ? (
+                                <Link
+                                  href={`/events/${relatedEvent.event_id}`}
+                                  className="mt-2 inline-flex w-fit rounded-lg border border-sky-800 bg-sky-950/40 px-2.5 py-1 text-xs font-medium text-sky-100 transition hover:bg-sky-900/60"
+                                >
+                                  Ver evento origen
+                                </Link>
+                              ) : null}
+                            </div>
+                          ) : null}
                         </div>
 
                         {item.source_text ? (

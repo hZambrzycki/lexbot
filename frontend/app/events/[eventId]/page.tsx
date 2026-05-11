@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { EventActions } from "@/app/components/event-actions";
 import { getEvent } from "@/lib/api";
 import type { EventItem } from "@/lib/types";
+import { eventRelationLabel } from "@/lib/event-relations";
 
 type Props = {
   params: Promise<{
@@ -65,7 +66,7 @@ function humanComputation(event: {
   const daysLabel = event.is_business_days ? "días hábiles" : "días naturales";
   const nextDay = event.add_extra_day ? " desde el día siguiente" : "";
 
-  return `Plazo de ${event.relative_days} ${daysLabel}${nextDay} desde la notificación (${base})`;
+  return `Plazo de ${event.relative_days} ${daysLabel}${nextDay} desde la fecha base (${base})`;
 }
 
 function temporalStatus(date?: string) {
@@ -146,6 +147,7 @@ async function loadEventOrNotFound(eventId: string): Promise<EventItem> {
 export default async function EventPage({ params }: Props) {
   const { eventId } = await params;
   const event = await loadEventOrNotFound(eventId);
+  const relation = eventRelationLabel(event);
 
   return (
     <main className="mx-auto max-w-5xl space-y-6 p-6">
@@ -201,6 +203,18 @@ export default async function EventPage({ params }: Props) {
         <p className="mt-4 rounded-xl border border-neutral-800 bg-black/20 p-4 text-sm leading-6 text-neutral-200">
           {event.source_text}
         </p>
+
+        {relation ? (
+          <div className="mt-4 rounded-xl border border-sky-900/60 bg-sky-950/20 p-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-sky-300/80">
+              Relación procesal
+            </p>
+
+            <p className="mt-1 text-sm font-medium text-sky-100">
+              ↳ {relation}
+            </p>
+          </div>
+        ) : null}
 
         <div className="mt-4 rounded-xl border border-neutral-800 bg-black/20 p-3">
           <EventActions

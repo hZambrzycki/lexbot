@@ -1,4 +1,12 @@
+"use client";
+
 import Link from "next/link";
+import { useState } from "react";
+
+import {
+  eventRelationLabel,
+  findRelatedEvent,
+} from "@/lib/event-relations";
 import type { EventItem } from "@/lib/types";
 
 type Props = {
@@ -119,7 +127,6 @@ function formatDate(value?: string) {
 function timelineTone(item: EventItem) {
   if (item.status === "overdue" && item.priority === "critical") {
     return {
-      dot: "border-red-500 bg-red-950",
       card: "border-red-900/70 bg-red-950/20",
       text: "text-red-100",
       badge: "border-red-800 bg-red-950/60 text-red-200",
@@ -128,7 +135,6 @@ function timelineTone(item: EventItem) {
 
   if (item.status === "overdue") {
     return {
-      dot: "border-orange-500 bg-orange-950",
       card: "border-orange-900/60 bg-orange-950/10",
       text: "text-orange-100",
       badge: "border-orange-800 bg-orange-950/60 text-orange-200",
@@ -137,7 +143,6 @@ function timelineTone(item: EventItem) {
 
   if (item.status === "today") {
     return {
-      dot: "border-yellow-500 bg-yellow-950",
       card: "border-yellow-900/60 bg-yellow-950/10",
       text: "text-yellow-100",
       badge: "border-yellow-800 bg-yellow-950/60 text-yellow-200",
@@ -145,7 +150,6 @@ function timelineTone(item: EventItem) {
   }
 
   return {
-    dot: "border-emerald-600 bg-emerald-950",
     card: "border-neutral-800 bg-neutral-950/70",
     text: "text-neutral-100",
     badge: "border-neutral-700 bg-neutral-900 text-neutral-300",
@@ -159,15 +163,6 @@ function shortText(value?: string, maxLength = 150) {
   if (normalized.length <= maxLength) return normalized;
 
   return `${normalized.slice(0, maxLength).trim()}...`;
-}
-
-function sortEvents(events: EventItem[]) {
-  return [...events].sort((a, b) => {
-    const dateCompare = a.event_date.localeCompare(b.event_date);
-    if (dateCompare !== 0) return dateCompare;
-
-    return phaseRank(a.event_type) - phaseRank(b.event_type);
-  });
 }
 
 function phaseRank(eventType?: string) {
@@ -189,11 +184,24 @@ function phaseRank(eventType?: string) {
   }
 }
 
+function sortEvents(events: EventItem[]) {
+  return [...events].sort((a, b) => {
+    const dateCompare = a.event_date.localeCompare(b.event_date);
+
+    if (dateCompare !== 0) {
+      return dateCompare;
+    }
+
+    return phaseRank(a.event_type) - phaseRank(b.event_type);
+  });
+}
+
 function groupByDay(events: EventItem[]): DayGroup[] {
   const groups = new Map<string, EventItem[]>();
 
   for (const event of events) {
     const current = groups.get(event.event_date) ?? [];
+
     current.push(event);
     groups.set(event.event_date, current);
   }
@@ -208,7 +216,9 @@ function computationLabel(item: EventItem) {
   if (item.date_kind === "relative") {
     const days =
       typeof item.relative_days === "number" && item.relative_days > 0
-        ? `${item.relative_days} ${item.is_business_days ? "días hábiles" : "días naturales"}`
+        ? `${item.relative_days} ${
+            item.is_business_days ? "días hábiles" : "días naturales"
+          }`
         : "plazo relativo";
 
     return item.anchor_date
@@ -219,11 +229,35 @@ function computationLabel(item: EventItem) {
   return "Fecha directa";
 }
 
+function TimelineMetric({
+  label,
+  value,
+}: {
+  label: string;
+  value: number;
+}) {
+  return (
+    <span className="rounded-full border border-neutral-800 bg-neutral-900 px-3 py-1 text-xs font-medium text-neutral-300">
+      {label}: {value}
+    </span>
+  );
+}
+
 export function ProceduralTimeline({ events, caseFileId }: Props) {
+  const [showAll, setShowAll] = useState(false);
+
   const sortedEvents = sortEvents(events);
-  const visibleEvents = sortedEvents.slice(0, 12);
-  const hiddenCount = Math.max(0, sortedEvents.length - visibleEvents.length);
+  const visibleEvents = showAll ? sortedEvents : sortedEvents.slice(0, 12);
+  const hiddenCount = Math.max(0, sortedEvents.length - 12);
   const groups = groupByDay(visibleEvents);
+
+  const relativeCount = sortedEvents.filter(
+    (event) => event.date_kind === "relative",
+  ).length;
+
+  const linkedCount = sortedEvents.filter((event) =>
+    findRelatedEvent(event, sortedEvents),
+  ).length;
 
   if (sortedEvents.length === 0) {
     return (
@@ -256,6 +290,13 @@ export function ProceduralTimeline({ events, caseFileId }: Props) {
             Vista cronológica con lectura procesal: fechas base,
             requerimientos, plazos calculados, vencimientos y señalamientos.
           </p>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <TimelineMetric label="Hitos" value={sortedEvents.length} />
+            <TimelineMetric label="Visibles" value={visibleEvents.length} />
+            <TimelineMetric label="Plazos relativos" value={relativeCount} />
+            <TimelineMetric label="Con origen" value={linkedCount} />
+          </div>
         </div>
 
         <Link
@@ -267,10 +308,25 @@ export function ProceduralTimeline({ events, caseFileId }: Props) {
       </div>
 
       <div className="mt-5 flex flex-wrap gap-2 text-xs">
-        <LegendBadge label="Fecha base" className="border-sky-800 bg-sky-950/40 text-sky-100" />
-        <LegendBadge label="Plazo calculado" className="border-red-800 bg-red-950/40 text-red-100" />
-        <LegendBadge label="Actuación requerida" className="border-yellow-800 bg-yellow-950/40 text-yellow-100" />
-        <LegendBadge label="Señalamiento" className="border-purple-800 bg-purple-950/40 text-purple-100" />
+        <LegendBadge
+          label="Fecha base"
+          className="border-sky-800 bg-sky-950/40 text-sky-100"
+        />
+
+        <LegendBadge
+          label="Plazo calculado"
+          className="border-red-800 bg-red-950/40 text-red-100"
+        />
+
+        <LegendBadge
+          label="Actuación requerida"
+          className="border-yellow-800 bg-yellow-950/40 text-yellow-100"
+        />
+
+        <LegendBadge
+          label="Señalamiento"
+          className="border-purple-800 bg-purple-950/40 text-purple-100"
+        />
       </div>
 
       <div className="mt-6 space-y-6">
@@ -293,6 +349,8 @@ export function ProceduralTimeline({ events, caseFileId }: Props) {
                 {group.items.map((item) => {
                   const tone = timelineTone(item);
                   const phase = proceduralPhase(item);
+                  const relation = eventRelationLabel(item, sortedEvents);
+                  const relatedEvent = findRelatedEvent(item, sortedEvents);
 
                   return (
                     <article
@@ -337,6 +395,23 @@ export function ProceduralTimeline({ events, caseFileId }: Props) {
                           <p className="mt-2 text-xs text-neutral-500">
                             Cómputo: {computationLabel(item)}
                           </p>
+
+                          {relation ? (
+                            <div className="mt-1 space-y-1">
+                              <p className="text-xs font-medium text-sky-300">
+                                ↳ {relation}
+                              </p>
+
+                              {relatedEvent ? (
+                                <Link
+                                  href={`/events/${relatedEvent.event_id}`}
+                                  className="inline-flex w-fit rounded-lg border border-sky-900/60 bg-sky-950/20 px-2.5 py-1 text-xs font-medium text-sky-100 transition hover:bg-sky-900/50"
+                                >
+                                  Ver evento origen
+                                </Link>
+                              ) : null}
+                            </div>
+                          ) : null}
                         </div>
 
                         <div className="flex shrink-0 flex-wrap gap-2">
@@ -371,10 +446,15 @@ export function ProceduralTimeline({ events, caseFileId }: Props) {
       </div>
 
       {hiddenCount > 0 ? (
-        <div className="mt-4 rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-sm text-neutral-400">
-          Hay {hiddenCount} hitos adicionales. Abre la agenda del expediente
-          para ver la secuencia completa.
-        </div>
+        <button
+          type="button"
+          onClick={() => setShowAll((value) => !value)}
+          className="mt-4 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-sm font-medium text-neutral-300 transition hover:bg-neutral-800 hover:text-neutral-100"
+        >
+          {showAll
+            ? "Ver menos hitos"
+            : `Ver ${hiddenCount} hitos adicionales`}
+        </button>
       ) : null}
     </section>
   );
@@ -388,7 +468,9 @@ function LegendBadge({
   className: string;
 }) {
   return (
-    <span className={`rounded-full border px-2.5 py-1 font-medium ${className}`}>
+    <span
+      className={`rounded-full border px-2.5 py-1 font-medium ${className}`}
+    >
       {label}
     </span>
   );
