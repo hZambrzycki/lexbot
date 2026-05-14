@@ -45,8 +45,8 @@ var (
 	textualDateRegex = regexp.MustCompile(`\b(\d{1,2})\s+de\s+([a-záéíóú]+)\s+de\s+(\d{4})\b`)
 
 	relativeDaysRegex = regexp.MustCompile(
-		`((?:en\s+el\s+plazo\s+de|en\s+plazo\s+de|plazo\s+de|dentro\s+de|en)\s+` +
-			`(\d{1,2}|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|dieciseis|dieciséis|diecisiete|dieciocho|diecinueve|veinte)` +
+		`((?:en\s+el\s+plazo\s+de|en\s+plazo\s+de|se\s+concede\s+un\s+plazo\s+de|se\s+concede\s+plazo\s+de|plazo\s+de|dentro\s+de|en)\s+` +
+			`(\d{1,2}|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|dieciseis|diecisiete|dieciocho|diecinueve|veinte)` +
 			`\s+dias?` +
 			`(?:\s+(habil(?:es)?|natural(?:es)?))?)`,
 	)
@@ -80,12 +80,14 @@ func extractDocumentEvents(content string, cfg EventComputationConfig) []extract
 	lines := splitEventLines(content)
 	candidates := make([]extractedEventCandidate, 0)
 
+	documentAnchorDate := findLastDateInDocument(content)
+
 	var lastAbsoluteDate string
 	var lastNotificationDate string
 	var lastStrongProceduralDate string
 
 	for _, line := range lines {
-		lineNormalized := normalizeEventText(line)
+		lineNormalized := normalizeASCIIText(line)
 		if lineNormalized == "" {
 			continue
 		}
@@ -124,6 +126,7 @@ func extractDocumentEvents(content string, cfg EventComputationConfig) []extract
 			lastNotificationDate,
 			lastStrongProceduralDate,
 			lastAbsoluteDate,
+			documentAnchorDate,
 		)
 
 		relativeMatches := extractRelativeDateMatchesFromLine(line)
@@ -179,6 +182,7 @@ func selectAnchorDate(
 	lastNotificationDate string,
 	lastStrongProceduralDate string,
 	lastAbsoluteDate string,
+	documentAnchorDate string,
 ) (string, string) {
 	if len(absoluteDates) > 0 {
 		return absoluteDates[len(absoluteDates)-1], anchorSourceInline
@@ -200,6 +204,10 @@ func selectAnchorDate(
 		return lastAbsoluteDate, anchorSourcePreviousLine
 	}
 
+	if strings.TrimSpace(documentAnchorDate) != "" {
+		return documentAnchorDate, anchorSourceProceduralAnchorLine
+	}
+
 	return "", ""
 }
 
@@ -212,27 +220,82 @@ func usesNotificationAnchorPhrase(eventType string) bool {
 }
 
 func isStrongProceduralAnchorLine(line string) bool {
+	line = normalizeASCIIText(line)
+
 	return containsAny(line,
 		"resolucion de fecha",
-		"resolución de fecha",
 		"auto de fecha",
 		"decreto de fecha",
 		"providencia de fecha",
 		"diligencia de ordenacion de fecha",
-		"diligencia de ordenación de fecha",
 	)
+}
+
+func findLastDateInDocument(content string) string {
+	dates := extractDatesFromLine(content)
+	if len(dates) == 0 {
+		return ""
+	}
+
+	return dates[len(dates)-1]
 }
 
 func splitEventLines(content string) []string {
 	raw := strings.Split(content, "\n")
-	lines := make([]string, 0, len(raw))
+	baseLines := make([]string, 0, len(raw))
+
 	for _, line := range raw {
 		line = strings.TrimSpace(line)
 		if line != "" {
-			lines = append(lines, line)
+			baseLines = append(baseLines, line)
 		}
 	}
-	return lines
+
+	lines := make([]string, 0, len(baseLines))
+
+	for i := 0; i < len(baseLines); i++ {
+		current := baseLines[i]
+		lines = append(lines, current)
+
+		if i+1 < len(baseLines) && shouldJoinOCRContinuation(current, baseLines[i+1]) {
+			lines = append(lines, current+" "+baseLines[i+1])
+		}
+	}
+
+	return uniqueStrings(lines)
+}
+
+func shouldJoinOCRContinuation(current string, next string) bool {
+	currentNormalized := normalizeASCIIText(current)
+	nextNormalized := normalizeASCIIText(next)
+
+	if currentNormalized == "" || nextNormalized == "" {
+		return false
+	}
+
+	if strings.HasSuffix(currentNormalized, ".") {
+		return false
+	}
+
+	if containsAny(currentNormalized,
+		"plazo de",
+		"se concede plazo",
+		"se concede un plazo",
+		"dentro de",
+		"en el plazo de",
+	) {
+		return containsAny(nextNormalized,
+			"para",
+			"formular",
+			"aportar",
+			"alegaciones",
+			"documentacion",
+			"documentos",
+			"escrito",
+		)
+	}
+
+	return false
 }
 
 func normalizeEventText(value string) string {
@@ -240,6 +303,8 @@ func normalizeEventText(value string) string {
 }
 
 func classifyEventType(line string) string {
+	line = normalizeASCIIText(line)
+
 	if looksLikeRelativeDeadline(line) {
 		return "deadline"
 	}
@@ -248,16 +313,16 @@ func classifyEventType(line string) string {
 	case containsAny(line,
 		"juicio",
 		"vista",
-		"señalado para el día", "senalado para el dia",
-		"se señala juicio", "se senala juicio",
-		"se celebra el día", "se celebra el dia",
+		"senalado para el dia",
+		"se senala juicio",
+		"se celebra el dia",
 	):
 		return "hearing"
 
 	case containsAny(line,
 		"comparecencia",
-		"citación", "citacion",
-		"cítese", "citese",
+		"citacion",
+		"citese",
 	):
 		return "appearance"
 
@@ -266,31 +331,32 @@ func classifyEventType(line string) string {
 		"dentro del plazo",
 		"en el plazo de",
 		"se concede plazo",
+		"se concede un plazo",
 		"hasta el",
 		"improrrogable",
 	):
 		return "deadline"
 
 	case containsAny(line,
-		"presentación",
 		"presentacion",
 		"presentar escrito",
-		"presentación de demanda", "presentacion de demanda",
-		"presentación del recurso", "presentacion del recurso",
-		"fecha de presentación", "fecha de presentacion",
+		"presentacion de demanda",
+		"presentacion del recurso",
+		"fecha de presentacion",
 	):
 		return "filing"
 
 	case containsAny(line,
 		"requerir",
 		"requerimiento",
-		"requiérase", "requierase",
+		"requierase",
+		"se requiere",
 	):
 		return "requirement"
 
 	case containsAny(line,
-		"notifíquese", "notifiquese",
-		"notificación", "notificacion",
+		"notifiquese",
+		"notificacion",
 		"queda notificado",
 	):
 		return "notification"
@@ -318,6 +384,7 @@ func looksLikeRelativeDeadline(line string) bool {
 		"aportar",
 		"presentar",
 		"formular alegaciones",
+		"alegaciones",
 		"a contar desde la notificacion",
 		"desde la notificacion",
 		"a contar desde su notificacion",
@@ -419,7 +486,7 @@ func extractRelativeDateMatchesFromLine(line string) []relativeDateMatch {
 }
 
 func buildRelativeTriggerText(normalizedLine, baseTrigger string, addExtraDay bool) string {
-	baseTrigger = strings.TrimSpace(baseTrigger)
+	baseTrigger = normalizeRelativeTriggerText(baseTrigger)
 	if baseTrigger == "" {
 		return ""
 	}
@@ -434,6 +501,15 @@ func buildRelativeTriggerText(normalizedLine, baseTrigger string, addExtraDay bo
 	}
 
 	return strings.TrimSpace(baseTrigger + " " + nextDayText)
+}
+
+func normalizeRelativeTriggerText(value string) string {
+	value = strings.TrimSpace(value)
+
+	value = strings.TrimPrefix(value, "se concede un ")
+	value = strings.TrimPrefix(value, "se concede ")
+
+	return strings.TrimSpace(value)
 }
 
 func detectNextDayTriggerText(value string) string {
@@ -682,6 +758,28 @@ func uniqueDates(values []string) []string {
 			continue
 		}
 		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+
+	return result
+}
+
+func uniqueStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+
+		key := normalizeASCIIText(value)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+
+		seen[key] = struct{}{}
 		result = append(result, value)
 	}
 

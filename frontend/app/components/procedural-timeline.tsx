@@ -4,7 +4,9 @@ import Link from "next/link";
 import { useState } from "react";
 
 import {
+  derivedEventsLabel,
   eventRelationLabel,
+  findDerivedEvents,
   findRelatedEvent,
 } from "@/lib/event-relations";
 import type { EventItem } from "@/lib/types";
@@ -259,6 +261,10 @@ export function ProceduralTimeline({ events, caseFileId }: Props) {
     findRelatedEvent(event, sortedEvents),
   ).length;
 
+  const originCount = sortedEvents.filter(
+    (event) => findDerivedEvents(event, sortedEvents).length > 0,
+  ).length;
+
   if (sortedEvents.length === 0) {
     return (
       <section className="rounded-2xl border border-neutral-800 bg-neutral-950/70 p-5">
@@ -296,6 +302,7 @@ export function ProceduralTimeline({ events, caseFileId }: Props) {
             <TimelineMetric label="Visibles" value={visibleEvents.length} />
             <TimelineMetric label="Plazos relativos" value={relativeCount} />
             <TimelineMetric label="Con origen" value={linkedCount} />
+            <TimelineMetric label="Con derivados" value={originCount} />
           </div>
         </div>
 
@@ -351,6 +358,8 @@ export function ProceduralTimeline({ events, caseFileId }: Props) {
                   const phase = proceduralPhase(item);
                   const relation = eventRelationLabel(item, sortedEvents);
                   const relatedEvent = findRelatedEvent(item, sortedEvents);
+                  const derivedEvents = findDerivedEvents(item, sortedEvents);
+                  const derivedLabel = derivedEventsLabel(derivedEvents.length);
 
                   return (
                     <article
@@ -410,6 +419,33 @@ export function ProceduralTimeline({ events, caseFileId }: Props) {
                                   Ver evento origen
                                 </Link>
                               ) : null}
+                            </div>
+                          ) : null}
+
+                          {derivedEvents.length > 0 ? (
+                            <div className="mt-3 rounded-xl border border-emerald-900/60 bg-emerald-950/20 p-3">
+                              <p className="text-xs font-medium text-emerald-200">
+                                ↳ {derivedLabel}
+                              </p>
+
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                {derivedEvents.slice(0, 4).map((derived) => (
+                                  <Link
+                                    key={derived.event_id}
+                                    href={`/events/${derived.event_id}`}
+                                    className="inline-flex w-fit rounded-lg border border-emerald-800 bg-emerald-950/40 px-2.5 py-1 text-xs font-medium text-emerald-100 transition hover:bg-emerald-900/60"
+                                  >
+                                    {eventLabel(derived.event_type)} ·{" "}
+                                    {formatDate(derived.event_date)}
+                                  </Link>
+                                ))}
+
+                                {derivedEvents.length > 4 ? (
+                                  <span className="inline-flex rounded-lg border border-emerald-900/60 px-2.5 py-1 text-xs text-emerald-200/80">
+                                    +{derivedEvents.length - 4} más
+                                  </span>
+                                ) : null}
+                              </div>
                             </div>
                           ) : null}
                         </div>

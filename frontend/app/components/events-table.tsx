@@ -5,7 +5,9 @@ import { useMemo, useState } from "react";
 import { EventItem } from "@/lib/types";
 import { EventActions } from "./event-actions";
 import {
+  derivedEventsLabel,
   eventRelationLabel,
+  findDerivedEvents,
   findRelatedEvent,
 } from "@/lib/event-relations";
 export type EventsTableMode = "pending" | "reviewed" | "resolved" | "mixed";
@@ -1081,6 +1083,8 @@ export function EventsTable({
             const insight = insightFor(item, mode);
             const relation = eventRelationLabel(item, items);
             const relatedEvent = findRelatedEvent(item, items);
+            const derivedEvents = findDerivedEvents(item, items);
+            const derivedLabel = derivedEventsLabel(derivedEvents.length);
             const isExpanded = expandedGroupId === group.id;
             const isGrouped = group.occurrenceCount > 1;
 
@@ -1170,6 +1174,30 @@ export function EventsTable({
                               ) : null}
                             </div>
                           ) : null}
+                          {derivedEvents.length > 0 ? (
+                          <div className="mt-2 rounded-xl border border-emerald-900/60 bg-emerald-950/20 p-3">
+                            <p className="text-xs font-medium text-emerald-200">
+                              ↳ {derivedLabel}
+                            </p>
+
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {derivedEvents.slice(0, 4).map((derived) => (
+                                <Link
+                                  key={derived.event_id}
+                                  href={`/events/${derived.event_id}`}
+                                  className="inline-flex w-fit rounded-lg border border-emerald-800 bg-emerald-950/40 px-2.5 py-1 text-xs font-medium text-emerald-100 transition hover:bg-emerald-900/60"
+                                >
+                                {displayLabel(derived.event_type)} · {formatDate(derived.event_date)}                                </Link>
+                              ))}
+
+                              {derivedEvents.length > 4 ? (
+                                <span className="inline-flex rounded-lg border border-emerald-900/60 px-2.5 py-1 text-xs text-emerald-200/80">
+                                  +{derivedEvents.length - 4} más
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                        ) : null}  
                         </div>
 
                         {item.source_text ? (

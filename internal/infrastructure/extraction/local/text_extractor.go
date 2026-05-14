@@ -57,25 +57,63 @@ func (e *TextExtractor) extractPDFFile(ctx context.Context, path string) (string
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
+
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
 		errMsg := strings.TrimSpace(stderr.String())
-		if errMsg != "" {
-			return "", fmt.Errorf("pdf extraction failed: %s: %w", errMsg, err)
+
+		fmt.Println("OCR fallback triggered:", path)
+
+		ocrText, ocrErr := e.extractPDFWithOCR(ctx, path)
+		if ocrErr == nil {
+			fmt.Println("OCR extraction succeeded:", path)
+			return ocrText, nil
 		}
+
+		fmt.Println("OCR extraction failed:", ocrErr)
+
+		if errMsg != "" {
+			return "", fmt.Errorf(
+				"pdf extraction failed: %s: %w",
+				errMsg,
+				err,
+			)
+		}
+
 		return "", fmt.Errorf("pdf extraction failed: %w", err)
 	}
 
-	content := strings.TrimSpace(stdout.String())
+	content := normalizeWhitespace(stdout.String())
+
+	// PDF con texto normal → no usar OCR
+	if content != "" && len(content) >= 50 {
+		return content, nil
+	}
+
+	fmt.Println("Low text PDF detected, trying OCR:", path)
+
+	ocrText, ocrErr := e.extractPDFWithOCR(ctx, path)
+	if ocrErr == nil {
+		fmt.Println("OCR extraction succeeded:", path)
+
+		// Preferimos OCR si recupera más contenido
+		if len(ocrText) > len(content) {
+			return ocrText, nil
+		}
+	}
+
+	if ocrErr != nil {
+		fmt.Println("OCR extraction failed:", ocrErr)
+	}
+
 	if content == "" {
 		return "", ErrEmptyContent
 	}
 
 	return content, nil
 }
-
 func (e *TextExtractor) extractDOCXFile(path string) (string, error) {
 	r, err := zip.OpenReader(path)
 	if err != nil {
