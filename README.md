@@ -578,24 +578,6 @@ go test ./...
 
 ---
 
-# Current Status
-
-| Area | Status |
-|---|---|
-| Backend Architecture | 95% |
-| SQLite Persistence | 95% |
-| Document Pipeline | 92% |
-| OCR Pipeline | 80% |
-| Event Detection | 88% |
-| Timeline Engine | 88% |
-| Procedural Agenda | 90% |
-| FTS5 Search | 95% |
-| Frontend UX | 82% |
-| Testing | 40% |
-| Production Hardening | 55% |
-
----
-
 # Roadmap
 
 ## Short-term
